@@ -1,0 +1,20 @@
+[package]
+name = "yab"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.5.15", features = ["derive", "env", "wrap_help"] }
+crabgrind = "0.1.11"
+anes = "0.2.0"
+thiserror = "1.0.63"
+
+criterion = "0.5.1" # FIXME
+iai = "0.1.1" # FIXME
+
+[features]
+default = []
+
+[[bench]]
+name = "fib"
+harness = false
