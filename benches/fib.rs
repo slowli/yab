@@ -85,9 +85,15 @@ fn main() {
         bencher.bench(id, || fibonacci(black_box(n)));
     }
 
+    bencher.bench_with_setup("fib_setup", |instr| {
+        black_box(fibonacci(black_box(30)));
+        instr.start();
+        fibonacci(black_box(20))
+    });
+
     // Dropping the guard should not be measured
     bencher.bench("fib_guard", || {
-        fibonacci(black_box(5));
+        fibonacci(black_box(10));
         FibGuard(20)
     });
 }

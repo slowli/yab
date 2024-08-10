@@ -26,14 +26,17 @@ pub(crate) struct Options {
     /// Instrument benchmarks with cachegrind instrumentation.
     #[arg(long, hide = true, conflicts_with_all = ["bench", "list"])]
     cachegrind_instrument: bool,
+    /// Number of iterations to execute.
     #[arg(
         long,
         hide = true,
         default_value_t = 1,
-        conflicts_with_all = ["bench", "list"],
         requires = "cachegrind_instrument"
     )]
     cachegrind_iterations: u64,
+    /// Is this the baseline bench? If so, it will stop after setup on the last iteration.
+    #[arg(long, hide = true, requires = "cachegrind_instrument")]
+    cachegrind_baseline: bool,
 
     /// Wrapper to call `cachegrind` as. Beware that changing params will likely render results not comparable.
     /// `{OUT}` will be replaced with the path to the output file.
@@ -82,7 +85,10 @@ impl Options {
 
     pub fn mode(&self) -> BenchMode {
         if self.cachegrind_instrument {
-            BenchMode::Instrument(self.cachegrind_iterations)
+            BenchMode::Instrument {
+                iterations: self.cachegrind_iterations,
+                is_baseline: self.cachegrind_baseline,
+            }
         } else if self.list {
             BenchMode::List
         } else if self.print {

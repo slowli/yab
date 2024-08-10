@@ -86,13 +86,26 @@ pub(crate) fn check() -> Result<(), CachegrindError> {
     Ok(())
 }
 
-pub(crate) fn spawn_instrumented(
-    mut command: Command,
-    out_path: &str,
-    this_executable: &str,
-    id: &BenchmarkId,
-    iterations: u64,
-) -> Result<CachegrindSummary, CachegrindError> {
+#[derive(Debug)]
+pub(crate) struct SpawnArgs<'a> {
+    pub command: Command,
+    pub out_path: &'a str,
+    pub this_executable: &'a str,
+    pub id: &'a BenchmarkId,
+    pub iterations: u64,
+    pub is_baseline: bool,
+}
+
+pub(crate) fn spawn_instrumented(args: SpawnArgs) -> Result<CachegrindSummary, CachegrindError> {
+    let SpawnArgs {
+        mut command,
+        out_path,
+        this_executable,
+        id,
+        iterations,
+        is_baseline,
+    } = args;
+
     if let Some(parent_dir) = Path::new(out_path).parent() {
         fs::create_dir_all(parent_dir).map_err(|error| CachegrindError::CreateOutputDir {
             path: parent_dir.display().to_string(),
@@ -104,9 +117,12 @@ pub(crate) fn spawn_instrumented(
         this_executable,
         "--cachegrind-instrument",
         &format!("--cachegrind-iterations={iterations}"),
-        "--exact",
-        &id.to_string(),
     ]);
+    if is_baseline {
+        command.arg("--cachegrind-baseline");
+    }
+    command.args(["--exact", &id.to_string()]);
+
     let status = command
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -270,14 +286,46 @@ impl From<CachegrindSummary> for AccessSummary {
     }
 }
 
-pub(crate) fn run_instrumented<T>(mut bench: impl FnMut() -> T, iterations: u64) {
+pub(crate) fn run_instrumented<T>(
+    mut bench: impl FnMut(Instrumentation) -> T,
+    iterations: u64,
+    is_baseline: bool,
+) {
     let mut outputs = Vec::with_capacity(iterations as usize);
+
     #[cfg(feature = "instrumentation")]
     crabgrind::cachegrind::start_instrumentation();
-    outputs.extend((0..iterations).map(|_| bench()));
+
+    for i in 1..=iterations {
+        let instrumentation = Instrumentation {
+            terminate: is_baseline && i == iterations,
+        };
+        outputs.push(crate::black_box(bench(instrumentation)));
+    }
+
+    // Test outputs are intentionally never dropped
     #[cfg(feature = "instrumentation")]
     crabgrind::cachegrind::stop_instrumentation();
-
-    // outputs are never dropped
     process::exit(0);
+}
+
+#[derive(Debug)]
+#[must_use = "should be `start`ed"]
+pub struct Instrumentation {
+    terminate: bool,
+}
+
+impl Instrumentation {
+    pub(crate) const fn no_op() -> Self {
+        Self { terminate: false }
+    }
+
+    #[inline(always)]
+    pub fn start(self) {
+        if crate::black_box(self.terminate) {
+            #[cfg(feature = "instrumentation")]
+            crabgrind::cachegrind::stop_instrumentation();
+            process::exit(0);
+        }
+    }
 }

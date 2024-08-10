@@ -9,10 +9,13 @@ use std::{
 use clap::Parser;
 
 use self::{options::Options, reporter::Reporter};
-use crate::{cachegrind::CachegrindError, reporter::BenchReporter};
 pub use crate::{
-    cachegrind::{AccessSummary, CachegrindSummary},
+    cachegrind::{AccessSummary, CachegrindSummary, Instrumentation},
     output::{BenchmarkOutput, BenchmarkProcessor},
+};
+use crate::{
+    cachegrind::{CachegrindError, SpawnArgs},
+    reporter::BenchReporter,
 };
 
 mod cachegrind;
@@ -92,7 +95,7 @@ enum BenchMode {
     Bench,
     List,
     PrintResults,
-    Instrument(u64),
+    Instrument { iterations: u64, is_baseline: bool },
 }
 
 #[derive(Debug)]
@@ -108,11 +111,14 @@ impl Default for Bencher {
     fn default() -> Self {
         let options = Options::parse();
         let mut reporter = Reporter::default();
-        options.validate(&mut reporter);
+        if !options.validate(&mut reporter) {
+            process::exit(1);
+        }
+
         let mode = options.mode();
         if matches!(mode, BenchMode::Bench) {
             if let Err(err) = cachegrind::check() {
-                eprintln!("{err}");
+                reporter.report_fatal_error(&err);
                 process::exit(1);
             }
         }
@@ -137,13 +143,26 @@ impl Bencher {
     pub fn bench<T>(
         &mut self,
         id: impl Into<BenchmarkId>,
-        bench_fn: impl FnMut() -> T,
+        mut bench_fn: impl FnMut() -> T,
+    ) -> &mut Self {
+        self.bench_inner(id.into(), move |instrumentation| {
+            instrumentation.start();
+            bench_fn()
+        });
+        self
+    }
+
+    #[track_caller]
+    pub fn bench_with_setup<T>(
+        &mut self,
+        id: impl Into<BenchmarkId>,
+        bench_fn: impl FnMut(Instrumentation) -> T,
     ) -> &mut Self {
         self.bench_inner(id.into(), bench_fn);
         self
     }
 
-    fn bench_inner<T>(&mut self, id: BenchmarkId, mut bench_fn: impl FnMut() -> T) {
+    fn bench_inner<T>(&mut self, id: BenchmarkId, mut bench_fn: impl FnMut(Instrumentation) -> T) {
         if !self.options.should_run(&id) {
             return;
         }
@@ -153,80 +172,19 @@ impl Bencher {
                 // Run the function once w/o instrumentation.
                 let test_reporter = self.reporter.report_test(&id);
                 if cfg!(panic = "unwind") {
-                    let wrapped = panic::AssertUnwindSafe(move || drop(bench_fn()));
+                    let wrapped =
+                        panic::AssertUnwindSafe(move || drop(bench_fn(Instrumentation::no_op())));
                     if panic::catch_unwind(wrapped).is_err() {
                         test_reporter.fail();
                         return;
                     }
                 } else {
-                    bench_fn();
+                    bench_fn(Instrumentation::no_op());
                 }
                 test_reporter.ok();
             }
             BenchMode::Bench => {
-                let baseline_path = format!(
-                    "{}/{id}.baseline.cachegrind",
-                    self.options.cachegrind_out_dir
-                );
-                let full_path = format!("{}/{id}.cachegrind", self.options.cachegrind_out_dir);
-                let old_baseline = self.load_and_backup_summary(&baseline_path);
-                let old_summary = old_baseline.and_then(|baseline| {
-                    let full = self.load_and_backup_summary(&full_path)?;
-                    Some(full - baseline)
-                });
-
-                // Use `baseline_path` in case we won't run the baseline after calibration
-                let command = self.options.cachegrind_wrapper(&baseline_path);
-                let mut bench_reporter = self.reporter.report_bench(&id);
-                let cachegrind_result = cachegrind::spawn_instrumented(
-                    command,
-                    &baseline_path,
-                    &self.this_executable,
-                    &id,
-                    1,
-                );
-                let summary = Self::unwrap_summary(cachegrind_result, &mut bench_reporter);
-
-                let estimated_iterations = (self.options.warm_up_instructions
-                    / summary.instructions.total)
-                    .clamp(1, self.options.max_iterations);
-                bench_reporter.calibration(&summary, estimated_iterations);
-                let baseline_summary = if estimated_iterations == 1 {
-                    summary
-                } else {
-                    // This will override calibration output, which is exactly what we need.
-                    let command = self.options.cachegrind_wrapper(&baseline_path);
-                    let cachegrind_result = cachegrind::spawn_instrumented(
-                        command,
-                        &baseline_path,
-                        &self.this_executable,
-                        &id,
-                        estimated_iterations,
-                    );
-                    let summary = Self::unwrap_summary(cachegrind_result, &mut bench_reporter);
-                    bench_reporter.baseline(&summary);
-                    summary
-                };
-
-                let command = self.options.cachegrind_wrapper(&full_path);
-                let cachegrind_result = cachegrind::spawn_instrumented(
-                    command,
-                    &full_path,
-                    &self.this_executable,
-                    &id,
-                    estimated_iterations + 1,
-                );
-                let full_summary = Self::unwrap_summary(cachegrind_result, &mut bench_reporter);
-                let summary = full_summary - baseline_summary;
-
-                bench_reporter.ok(summary, old_summary);
-                self.processor.process_benchmark(
-                    &id,
-                    BenchmarkOutput {
-                        summary,
-                        old_summary,
-                    },
-                );
+                self.run_benchmark(id);
             }
             BenchMode::List => {
                 self.reporter.report_list_item(&id);
@@ -264,10 +222,89 @@ impl Bencher {
                     },
                 );
             }
-            BenchMode::Instrument(iterations) => {
-                cachegrind::run_instrumented(bench_fn, iterations);
+            BenchMode::Instrument {
+                iterations,
+                is_baseline,
+            } => {
+                cachegrind::run_instrumented(bench_fn, iterations, is_baseline);
             }
         }
+    }
+
+    /// The workflow is as follows:
+    ///
+    /// 1. Run the benchmark function once to understand how many iterations are necessary for warm-up, `n`.
+    /// 2. Run the *baseline* with `n + 1` iterations terminating after the setup on the last iteration.
+    ///    I.e., the "timing" of this run is `(n + 1) * setup + n * bench + const`.
+    /// 3. Run the full benchmark with `n + 1` iterations. The "timing" of this run is
+    ///    `(n + 1) * setup + (n + 1) * bench + const`.
+    /// 4. Subtract baseline stats from the full stats. The difference is equal to `bench`.
+    fn run_benchmark(&mut self, id: BenchmarkId) {
+        let baseline_path = format!(
+            "{}/{id}.baseline.cachegrind",
+            self.options.cachegrind_out_dir
+        );
+        let full_path = format!("{}/{id}.cachegrind", self.options.cachegrind_out_dir);
+        let old_baseline = self.load_and_backup_summary(&baseline_path);
+        let old_summary = old_baseline.and_then(|baseline| {
+            let full = self.load_and_backup_summary(&full_path)?;
+            Some(full - baseline)
+        });
+
+        // Use `baseline_path` in case we won't run the baseline after calibration
+        let command = self.options.cachegrind_wrapper(&baseline_path);
+        let mut bench_reporter = self.reporter.report_bench(&id);
+        let cachegrind_result = cachegrind::spawn_instrumented(SpawnArgs {
+            command,
+            out_path: &baseline_path,
+            this_executable: &self.this_executable,
+            id: &id,
+            iterations: 2,
+            is_baseline: true,
+        });
+        let summary = Self::unwrap_summary(cachegrind_result, &mut bench_reporter);
+
+        let estimated_iterations = (self.options.warm_up_instructions / summary.instructions.total)
+            .clamp(1, self.options.max_iterations);
+        bench_reporter.calibration(&summary, estimated_iterations);
+        let baseline_summary = if estimated_iterations == 1 {
+            summary
+        } else {
+            // This will override calibration output, which is exactly what we need.
+            let command = self.options.cachegrind_wrapper(&baseline_path);
+            let cachegrind_result = cachegrind::spawn_instrumented(SpawnArgs {
+                command,
+                out_path: &baseline_path,
+                this_executable: &self.this_executable,
+                id: &id,
+                iterations: estimated_iterations + 1,
+                is_baseline: true,
+            });
+            let summary = Self::unwrap_summary(cachegrind_result, &mut bench_reporter);
+            bench_reporter.baseline(&summary);
+            summary
+        };
+
+        let command = self.options.cachegrind_wrapper(&full_path);
+        let cachegrind_result = cachegrind::spawn_instrumented(SpawnArgs {
+            command,
+            out_path: &full_path,
+            this_executable: &self.this_executable,
+            id: &id,
+            iterations: estimated_iterations + 1,
+            is_baseline: false,
+        });
+        let full_summary = Self::unwrap_summary(cachegrind_result, &mut bench_reporter);
+        let summary = full_summary - baseline_summary;
+
+        bench_reporter.ok(summary, old_summary);
+        self.processor.process_benchmark(
+            &id,
+            BenchmarkOutput {
+                summary,
+                old_summary,
+            },
+        );
     }
 
     fn load_summary(&mut self, path: &str) -> Option<CachegrindSummary> {
