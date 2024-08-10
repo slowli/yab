@@ -1,12 +1,22 @@
-use std::{env, fmt, fs, panic, panic::Location, process};
+use std::{
+    env, fmt, fs,
+    hash::{Hash, Hasher},
+    panic,
+    panic::Location,
+    process,
+};
 
 use clap::Parser;
 
 use self::{options::Options, reporter::Reporter};
-use crate::cachegrind::CachegrindSummary;
+pub use crate::{
+    cachegrind::{AccessSummary, CachegrindSummary},
+    output::{BenchmarkOutput, BenchmarkProcessor},
+};
 
 mod cachegrind;
 mod options;
+mod output;
 mod reporter;
 
 pub fn black_box<T>(dummy: T) -> T {
@@ -17,11 +27,26 @@ pub fn black_box<T>(dummy: T) -> T {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BenchmarkId {
     name: String,
     location: &'static Location<'static>,
     args: Option<String>,
+}
+
+impl PartialEq for BenchmarkId {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.args == other.args
+    }
+}
+
+impl Eq for BenchmarkId {}
+
+impl Hash for BenchmarkId {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+        self.args.hash(state);
+    }
 }
 
 impl fmt::Display for BenchmarkId {
@@ -54,6 +79,10 @@ impl BenchmarkId {
             args: Some(args.to_string()),
         }
     }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -69,18 +98,13 @@ enum BenchMode {
 pub struct Bencher {
     options: Options,
     mode: BenchMode,
+    processor: Box<dyn BenchmarkProcessor>,
     reporter: Reporter,
     this_executable: String,
 }
 
 impl Default for Bencher {
     fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Bencher {
-    fn new() -> Self {
         let options = Options::parse();
         let mode = options.mode();
         if matches!(mode, BenchMode::Bench) {
@@ -93,9 +117,17 @@ impl Bencher {
         Self {
             mode,
             options,
+            processor: Box::new(()),
             reporter: Reporter::default(),
             this_executable: env::args().next().expect("no executable arg"),
         }
+    }
+}
+
+impl Bencher {
+    pub fn with_processor(mut self, processor: impl BenchmarkProcessor + 'static) -> Self {
+        self.processor = Box::new(processor);
+        self
     }
 
     #[track_caller]
@@ -148,6 +180,13 @@ impl Bencher {
                     }
                 };
                 bench_reporter.ok(summary, old_summary);
+                self.processor.process_benchmark(
+                    &id,
+                    BenchmarkOutput {
+                        summary,
+                        old_summary,
+                    },
+                );
             }
             BenchMode::List => {
                 self.reporter.report_list_item(&id);
@@ -163,6 +202,13 @@ impl Bencher {
                 self.reporter
                     .report_bench_result(&id)
                     .ok(summary, old_summary);
+                self.processor.process_benchmark(
+                    &id,
+                    BenchmarkOutput {
+                        summary,
+                        old_summary,
+                    },
+                );
             }
             BenchMode::Instrument => {
                 cachegrind::run_instrumented(bench_fn);

@@ -125,21 +125,23 @@ pub(crate) fn spawn_instrumented(
 }
 
 #[derive(Debug, Clone, Copy)]
-struct CachegrindDataPoint {
-    total: u64,
-    l1_misses: u64,
-    l3_misses: u64,
+#[non_exhaustive]
+pub struct CachegrindDataPoint {
+    pub total: u64,
+    pub l1_misses: u64,
+    pub l3_misses: u64,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct CachegrindSummary {
-    instructions: CachegrindDataPoint,
-    data_reads: CachegrindDataPoint,
-    data_writes: CachegrindDataPoint,
+#[non_exhaustive]
+pub struct CachegrindSummary {
+    pub instructions: CachegrindDataPoint,
+    pub data_reads: CachegrindDataPoint,
+    pub data_writes: CachegrindDataPoint,
 }
 
 impl CachegrindSummary {
-    pub fn new(file: fs::File, path: &str) -> Result<Self, CachegrindError> {
+    pub(crate) fn new(file: fs::File, path: &str) -> Result<Self, CachegrindError> {
         let reader = io::BufReader::new(file);
         Self::read(reader).map_err(|err| err.generalize(path.to_owned()))
     }
@@ -204,7 +206,8 @@ impl CachegrindSummary {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct AccessSummary {
+#[non_exhaustive]
+pub struct AccessSummary {
     pub instructions: u64,
     pub l1_hits: u64,
     pub l3_hits: u64,
