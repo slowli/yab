@@ -78,15 +78,15 @@ impl Drop for BenchmarkChecker {
 fn main() {
     let mut bencher = Bencher::default().with_processor(BenchmarkChecker::default());
     bencher
-        .bench_function("fib_short", || fibonacci(black_box(10)))
-        .bench_function("fib_long", || fibonacci(black_box(30)));
+        .bench("fib_short", || fibonacci(black_box(10)))
+        .bench("fib_long", || fibonacci(black_box(30)));
     for n in [15, 20, 25] {
         let id = BenchmarkId::new("fib", n);
-        bencher.bench_function(id, || fibonacci(black_box(n)));
+        bencher.bench(id, || fibonacci(black_box(n)));
     }
 
     // Dropping the guard should not be measured
-    bencher.bench_function("fib_guard", || {
+    bencher.bench("fib_guard", || {
         fibonacci(black_box(5));
         FibGuard(20)
     });

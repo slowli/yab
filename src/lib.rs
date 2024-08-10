@@ -134,14 +134,18 @@ impl Bencher {
     }
 
     #[track_caller]
-    pub fn bench_function<T>(
+    pub fn bench<T>(
         &mut self,
         id: impl Into<BenchmarkId>,
-        mut bench_fn: impl FnMut() -> T,
+        bench_fn: impl FnMut() -> T,
     ) -> &mut Self {
-        let id = id.into();
+        self.bench_inner(id.into(), bench_fn);
+        self
+    }
+
+    fn bench_inner<T>(&mut self, id: BenchmarkId, mut bench_fn: impl FnMut() -> T) {
         if !self.options.should_run(&id) {
-            return self;
+            return;
         }
 
         match self.mode {
@@ -152,7 +156,7 @@ impl Bencher {
                     let wrapped = panic::AssertUnwindSafe(move || drop(bench_fn()));
                     if panic::catch_unwind(wrapped).is_err() {
                         test_reporter.fail();
-                        return self;
+                        return;
                     }
                 } else {
                     bench_fn();
@@ -235,11 +239,11 @@ impl Bencher {
                 let full_path = format!("{}/{id}.cachegrind", self.options.cachegrind_out_dir);
                 let Some(baseline) = self.load_summary(&baseline_path) else {
                     self.reporter.report_bench_result(&id).no_data();
-                    return self;
+                    return;
                 };
                 let Some(full) = self.load_summary(&full_path) else {
                     self.reporter.report_bench_result(&id).no_data();
-                    return self;
+                    return;
                 };
                 let summary = full - baseline;
 
@@ -264,7 +268,6 @@ impl Bencher {
                 cachegrind::run_instrumented(bench_fn, iterations);
             }
         }
-        self
     }
 
     fn load_summary(&mut self, path: &str) -> Option<CachegrindSummary> {
