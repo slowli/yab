@@ -5,6 +5,7 @@ use std::{
     collections::HashMap,
     fs, io,
     io::BufRead,
+    ops,
     path::Path,
     process::{Command, Stdio},
 };
@@ -89,6 +90,7 @@ pub(crate) fn spawn_instrumented(
     out_path: &str,
     this_executable: &str,
     id: &BenchmarkId,
+    iterations: u64,
 ) -> Result<CachegrindSummary, CachegrindError> {
     if let Some(parent_dir) = Path::new(out_path).parent() {
         fs::create_dir_all(parent_dir).map_err(|error| CachegrindError::CreateOutputDir {
@@ -100,6 +102,7 @@ pub(crate) fn spawn_instrumented(
     command.args([
         this_executable,
         "--cachegrind-instrument",
+        &format!("--cachegrind-iterations={iterations}"),
         "--exact",
         &id.to_string(),
     ]);
@@ -132,12 +135,36 @@ pub struct CachegrindDataPoint {
     pub l3_misses: u64,
 }
 
+impl ops::Sub for CachegrindDataPoint {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self {
+            total: self.total.saturating_sub(rhs.total),
+            l1_misses: self.l1_misses.saturating_sub(rhs.l1_misses),
+            l3_misses: self.l3_misses.saturating_sub(rhs.l3_misses),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
 pub struct CachegrindSummary {
     pub instructions: CachegrindDataPoint,
     pub data_reads: CachegrindDataPoint,
     pub data_writes: CachegrindDataPoint,
+}
+
+impl ops::Sub for CachegrindSummary {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self {
+            instructions: self.instructions - rhs.instructions,
+            data_reads: self.data_reads - rhs.data_reads,
+            data_writes: self.data_writes - rhs.data_writes,
+        }
+    }
 }
 
 impl CachegrindSummary {
@@ -242,9 +269,11 @@ impl From<CachegrindSummary> for AccessSummary {
     }
 }
 
-pub(crate) fn run_instrumented<T>(mut bench: impl FnMut() -> T) {
+pub(crate) fn run_instrumented<T>(mut bench: impl FnMut() -> T, iterations: u64) {
+    let mut outputs = Vec::with_capacity(iterations as usize);
     crabgrind::cachegrind::start_instrumentation();
-    let _output = bench();
+    outputs.extend((0..iterations).map(|_| bench()));
     crabgrind::cachegrind::stop_instrumentation();
-    // output is dropped outside the instrumented section
+    // outputs are dropped outside the instrumented section
+    crate::black_box(outputs);
 }

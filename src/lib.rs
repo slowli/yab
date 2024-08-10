@@ -9,6 +9,7 @@ use std::{
 use clap::Parser;
 
 use self::{options::Options, reporter::Reporter};
+use crate::{cachegrind::CachegrindError, reporter::BenchReporter};
 pub use crate::{
     cachegrind::{AccessSummary, CachegrindSummary},
     output::{BenchmarkOutput, BenchmarkProcessor},
@@ -85,13 +86,15 @@ impl BenchmarkId {
     }
 }
 
+const MAX_ITERATIONS: u64 = 1_000;
+
 #[derive(Debug, Clone, Copy)]
 enum BenchMode {
     Test,
     Bench,
     List,
     PrintResults,
-    Instrument,
+    Instrument(u64),
 }
 
 #[derive(Debug)]
@@ -157,28 +160,61 @@ impl Bencher {
                 test_reporter.ok();
             }
             BenchMode::Bench => {
-                let out_path = format!("{}/{id}.cachegrind", self.options.cachegrind_out_dir);
-                let old_summary = self.load_summary(&out_path);
-                if old_summary.is_some() {
-                    let backup_path = format!("{out_path}.old");
-                    if let Err(err) = fs::copy(&out_path, &backup_path) {
-                        let err =
-                            format!("Failed backing up cachegrind output `{out_path}`: {err}");
-                        self.reporter.report_warning(&err);
-                    }
-                }
+                let baseline_path = format!(
+                    "{}/{id}.baseline.cachegrind",
+                    self.options.cachegrind_out_dir
+                );
+                let full_path = format!("{}/{id}.cachegrind", self.options.cachegrind_out_dir);
+                let old_baseline = self.load_and_backup_summary(&baseline_path);
+                let old_summary = old_baseline.and_then(|baseline| {
+                    let full = self.load_and_backup_summary(&full_path)?;
+                    Some(full - baseline)
+                });
 
-                let command = self.options.cachegrind_wrapper(&out_path);
-                let bench_reporter = self.reporter.report_bench(&id);
-                let cachegrind_result =
-                    cachegrind::spawn_instrumented(command, &out_path, &self.this_executable, &id);
-                let summary = match cachegrind_result {
-                    Ok(summary) => summary,
-                    Err(err) => {
-                        self.reporter.report_fatal_error(&err);
-                        process::exit(1);
-                    }
+                // Use `baseline_path` in case we won't run the baseline after calibration
+                let command = self.options.cachegrind_wrapper(&baseline_path);
+                let mut bench_reporter = self.reporter.report_bench(&id);
+                let cachegrind_result = cachegrind::spawn_instrumented(
+                    command,
+                    &baseline_path,
+                    &self.this_executable,
+                    &id,
+                    1,
+                );
+                let summary = Self::unwrap_summary(cachegrind_result, &mut bench_reporter);
+
+                let estimated_iterations = (self.options.min_instructions
+                    / summary.instructions.total)
+                    .clamp(1, MAX_ITERATIONS);
+                bench_reporter.calibration(&summary, estimated_iterations);
+                let baseline_summary = if estimated_iterations == 1 {
+                    summary
+                } else {
+                    // This will override calibration output, which is exactly what we need.
+                    let command = self.options.cachegrind_wrapper(&baseline_path);
+                    let cachegrind_result = cachegrind::spawn_instrumented(
+                        command,
+                        &baseline_path,
+                        &self.this_executable,
+                        &id,
+                        estimated_iterations,
+                    );
+                    let summary = Self::unwrap_summary(cachegrind_result, &mut bench_reporter);
+                    bench_reporter.baseline(&summary);
+                    summary
                 };
+
+                let command = self.options.cachegrind_wrapper(&full_path);
+                let cachegrind_result = cachegrind::spawn_instrumented(
+                    command,
+                    &full_path,
+                    &self.this_executable,
+                    &id,
+                    estimated_iterations + 1,
+                );
+                let full_summary = Self::unwrap_summary(cachegrind_result, &mut bench_reporter);
+                let summary = full_summary - baseline_summary;
+
                 bench_reporter.ok(summary, old_summary);
                 self.processor.process_benchmark(
                     &id,
@@ -192,13 +228,27 @@ impl Bencher {
                 self.reporter.report_list_item(&id);
             }
             BenchMode::PrintResults => {
-                let out_path = format!("{}/{id}.cachegrind", self.options.cachegrind_out_dir);
-                let Some(summary) = self.load_summary(&out_path) else {
+                let baseline_path = format!(
+                    "{}/{id}.baseline.cachegrind",
+                    self.options.cachegrind_out_dir
+                );
+                let full_path = format!("{}/{id}.cachegrind", self.options.cachegrind_out_dir);
+                let Some(baseline) = self.load_summary(&baseline_path) else {
                     self.reporter.report_bench_result(&id).no_data();
                     return self;
                 };
-                let backup_path = format!("{out_path}.old");
-                let old_summary = self.load_summary(&backup_path);
+                let Some(full) = self.load_summary(&full_path) else {
+                    self.reporter.report_bench_result(&id).no_data();
+                    return self;
+                };
+                let summary = full - baseline;
+
+                let old_baseline_path = format!("{baseline_path}.old");
+                let old_full_path = format!("{full_path}.old");
+                let old_baseline = self.load_summary(&old_baseline_path);
+                let old_summary = old_baseline
+                    .and_then(|baseline| Some(self.load_summary(&old_full_path)? - baseline));
+
                 self.reporter
                     .report_bench_result(&id)
                     .ok(summary, old_summary);
@@ -210,8 +260,8 @@ impl Bencher {
                     },
                 );
             }
-            BenchMode::Instrument => {
-                cachegrind::run_instrumented(bench_fn);
+            BenchMode::Instrument(iterations) => {
+                cachegrind::run_instrumented(bench_fn, iterations);
             }
         }
         self
@@ -227,5 +277,30 @@ impl Bencher {
                     None
                 }
             })
+    }
+
+    fn load_and_backup_summary(&mut self, path: &str) -> Option<CachegrindSummary> {
+        let summary = self.load_summary(path);
+        if summary.is_some() {
+            let backup_path = format!("{path}.old");
+            if let Err(err) = fs::copy(path, &backup_path) {
+                let err = format!("Failed backing up cachegrind baseline `{path}`: {err}");
+                self.reporter.report_warning(&err);
+            }
+        }
+        summary
+    }
+
+    fn unwrap_summary(
+        result: Result<CachegrindSummary, CachegrindError>,
+        reporter: &mut BenchReporter<'_>,
+    ) -> CachegrindSummary {
+        match result {
+            Ok(summary) => summary,
+            Err(err) => {
+                reporter.fatal(&err);
+                process::exit(1);
+            }
+        }
     }
 }

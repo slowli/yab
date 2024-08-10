@@ -86,5 +86,8 @@ fn main() {
     }
 
     // Dropping the guard should not be measured
-    bencher.bench_function("fib_guard", || FibGuard(30));
+    bencher.bench_function("fib_guard", || {
+        fibonacci(black_box(5));
+        FibGuard(20)
+    });
 }

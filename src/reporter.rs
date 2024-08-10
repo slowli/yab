@@ -185,6 +185,30 @@ impl BenchReporter<'_> {
             .println(&format!("Benchmarking {id}: {no_data}"));
     }
 
+    // Logically, this should consume `self`; it doesn't to satisfy the borrow checker.
+    pub fn fatal(&mut self, err: &dyn fmt::Display) {
+        self.parent.report_fatal_error(err);
+    }
+
+    pub fn calibration(&mut self, summary: &CachegrindSummary, iterations: u64) {
+        self.parent.overwrite_line();
+        let id = &self.bench_id;
+        let instr = summary.instructions.total;
+        self.parent.print_overwritable(&format!(
+            "Benchmarking {id}: calibrated (~{instr} instructions / iter), \
+             will use {iterations} iterations"
+        ));
+    }
+
+    pub fn baseline(&mut self, summary: &CachegrindSummary) {
+        self.parent.overwrite_line();
+        let id = &self.bench_id;
+        let instr = summary.instructions.total;
+        self.parent.print_overwritable(&format!(
+            "Benchmarking {id}: captured baseline ({instr} instructions)"
+        ));
+    }
+
     pub fn ok(self, summary: CachegrindSummary, old_summary: Option<CachegrindSummary>) {
         self.parent.overwrite_line();
         let id = &self.bench_id;

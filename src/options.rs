@@ -12,6 +12,14 @@ pub(crate) struct Options {
     /// Instrument benchmarks with cachegrind instrumentation.
     #[arg(long, hide = true, conflicts_with_all = ["bench", "list"])]
     cachegrind_instrument: bool,
+    #[arg(
+        long,
+        hide = true,
+        default_value_t = 1,
+        conflicts_with_all = ["bench", "list"],
+        requires = "cachegrind_instrument"
+    )]
+    cachegrind_iterations: u64,
 
     /// Wrapper to call `cachegrind` as. Beware that changing params will likely render results not comparable.
     /// `{OUT}` will be replaced with the path to the output file.
@@ -31,6 +39,9 @@ pub(crate) struct Options {
         ].map(str::to_owned)
     )]
     cachegrind_wrapper: Vec<String>,
+    /// Minimum instructions.
+    #[arg(long, default_value_t = 1_000_000)]
+    pub min_instructions: u64,
     /// Base directory to put cachegrind outputs into. Will be created if absent.
     #[arg(long, default_value = "target/yab", env = "CACHEGRIND_OUT_DIR")]
     pub cachegrind_out_dir: String,
@@ -52,7 +63,7 @@ pub(crate) struct Options {
 impl Options {
     pub fn mode(&self) -> BenchMode {
         if self.cachegrind_instrument {
-            BenchMode::Instrument
+            BenchMode::Instrument(self.cachegrind_iterations)
         } else if self.list {
             BenchMode::List
         } else if self.print {
