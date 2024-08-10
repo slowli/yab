@@ -8,6 +8,14 @@ fn fibonacci(n: u64) -> u64 {
     }
 }
 
+struct FibGuard(u64);
+
+impl Drop for FibGuard {
+    fn drop(&mut self) {
+        fibonacci(black_box(self.0));
+    }
+}
+
 fn main() {
     let mut bencher = Bencher::default();
     bencher
@@ -17,4 +25,7 @@ fn main() {
         let id = BenchmarkId::new("fib", n);
         bencher.bench_function(id, || fibonacci(black_box(n)));
     }
+
+    // Dropping the guard should not be measured
+    bencher.bench_function("fib_guard", || FibGuard(30));
 }
