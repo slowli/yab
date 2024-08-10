@@ -7,6 +7,7 @@ use std::{
     io::BufRead,
     ops,
     path::Path,
+    process,
     process::{Command, Stdio},
 };
 
@@ -271,9 +272,12 @@ impl From<CachegrindSummary> for AccessSummary {
 
 pub(crate) fn run_instrumented<T>(mut bench: impl FnMut() -> T, iterations: u64) {
     let mut outputs = Vec::with_capacity(iterations as usize);
+    #[cfg(feature = "instrumentation")]
     crabgrind::cachegrind::start_instrumentation();
     outputs.extend((0..iterations).map(|_| bench()));
+    #[cfg(feature = "instrumentation")]
     crabgrind::cachegrind::stop_instrumentation();
-    // outputs are dropped outside the instrumented section
-    crate::black_box(outputs);
+
+    // outputs are never dropped
+    process::exit(0);
 }

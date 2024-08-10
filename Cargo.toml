@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4.5.15", features = ["derive", "env", "wrap_help"] }
-crabgrind = "0.1.11"
+crabgrind = { version = "0.1.11", optional = true }
 anes = "0.2.0"
 thiserror = "1.0.63"
 
@@ -14,6 +14,9 @@ iai = "0.1.1" # FIXME
 
 [features]
 default = []
+# Enables cachegrind instrumentation. Allows to get more precise results, but requires
+# cachegrind >=3.22.0.
+instrumentation = ["dep:crabgrind"]
 
 [[bench]]
 name = "fib"

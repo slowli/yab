@@ -2,7 +2,21 @@ use std::process::Command;
 
 use clap::Parser;
 
-use crate::{BenchMode, BenchmarkId};
+use crate::{reporter::Reporter, BenchMode, BenchmarkId};
+
+const DEFAULT_CACHEGRIND_WRAPPER: &[&str] = &[
+    "setarch",
+    "-R",
+    "valgrind",
+    "--tool=cachegrind",
+    "--cache-sim=yes",
+    #[cfg(feature = "instrumentation")]
+    "--instr-at-start=no",
+    "--I1=32768,8,64",
+    "--D1=32768,8,64",
+    "--LL=8388608,16,64",
+    "--cachegrind-out-file={OUT}",
+];
 
 #[derive(Debug, Parser)]
 pub(crate) struct Options {
@@ -25,23 +39,16 @@ pub(crate) struct Options {
     /// `{OUT}` will be replaced with the path to the output file.
     #[arg(
         long,
-        default_values_t = [
-            "setarch",
-            "-R",
-            "valgrind",
-            "--tool=cachegrind",
-            "--cache-sim=yes",
-            "--instr-at-start=no",
-            "--I1=32768,8,64",
-            "--D1=32768,8,64",
-            "--LL=8388608,16,64",
-            "--cachegrind-out-file={OUT}",
-        ].map(str::to_owned)
+        default_values_t = DEFAULT_CACHEGRIND_WRAPPER.iter().copied().map(str::to_owned)
     )]
     cachegrind_wrapper: Vec<String>,
-    /// Minimum instructions.
+    /// Target number of instructions for the benchmark warm-up. Note that this number may not be reached
+    /// for very fast benchmarks.
     #[arg(long, default_value_t = 1_000_000)]
-    pub min_instructions: u64,
+    pub warm_up_instructions: u64,
+    /// Maximum number of iterations for a single benchmark.
+    #[arg(long, default_value_t = 1_000)]
+    pub max_iterations: u64,
     /// Base directory to put cachegrind outputs into. Will be created if absent.
     #[arg(long, default_value = "target/yab", env = "CACHEGRIND_OUT_DIR")]
     pub cachegrind_out_dir: String,
@@ -61,6 +68,18 @@ pub(crate) struct Options {
 }
 
 impl Options {
+    pub fn validate(&self, reporter: &mut Reporter) -> bool {
+        if self.warm_up_instructions == 0 {
+            reporter.report_fatal_error(&"`warm_up_instructions` must be positive");
+            return false;
+        }
+        if self.max_iterations == 0 {
+            reporter.report_fatal_error(&"`max_iterations` must be positive");
+            return false;
+        }
+        true
+    }
+
     pub fn mode(&self) -> BenchMode {
         if self.cachegrind_instrument {
             BenchMode::Instrument(self.cachegrind_iterations)

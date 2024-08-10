@@ -86,8 +86,6 @@ impl BenchmarkId {
     }
 }
 
-const MAX_ITERATIONS: u64 = 1_000;
-
 #[derive(Debug, Clone, Copy)]
 enum BenchMode {
     Test,
@@ -109,6 +107,8 @@ pub struct Bencher {
 impl Default for Bencher {
     fn default() -> Self {
         let options = Options::parse();
+        let mut reporter = Reporter::default();
+        options.validate(&mut reporter);
         let mode = options.mode();
         if matches!(mode, BenchMode::Bench) {
             if let Err(err) = cachegrind::check() {
@@ -121,7 +121,7 @@ impl Default for Bencher {
             mode,
             options,
             processor: Box::new(()),
-            reporter: Reporter::default(),
+            reporter,
             this_executable: env::args().next().expect("no executable arg"),
         }
     }
@@ -183,9 +183,9 @@ impl Bencher {
                 );
                 let summary = Self::unwrap_summary(cachegrind_result, &mut bench_reporter);
 
-                let estimated_iterations = (self.options.min_instructions
+                let estimated_iterations = (self.options.warm_up_instructions
                     / summary.instructions.total)
-                    .clamp(1, MAX_ITERATIONS);
+                    .clamp(1, self.options.max_iterations);
                 bench_reporter.calibration(&summary, estimated_iterations);
                 let baseline_summary = if estimated_iterations == 1 {
                     summary
