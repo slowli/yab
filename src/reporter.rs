@@ -16,6 +16,7 @@ use crate::{
 pub(crate) struct Reporter {
     overwrite: bool,
     styling: bool,
+    has_overwritable_line: bool,
 }
 
 impl Default for Reporter {
@@ -23,6 +24,7 @@ impl Default for Reporter {
         Self {
             overwrite: io::stderr().is_terminal(),
             styling: io::stderr().is_terminal(),
+            has_overwritable_line: false,
         }
     }
 }
@@ -32,18 +34,23 @@ impl Reporter {
         if self.overwrite {
             eprint!("{message}");
             io::stderr().flush().ok();
+            self.has_overwritable_line = true;
         } else {
             eprintln!("{message}");
         }
     }
 
     fn overwrite_line(&mut self) {
-        if self.overwrite {
+        if self.overwrite && self.has_overwritable_line {
+            self.has_overwritable_line = false;
             eprint!("\r{}", ClearLine::All);
         }
     }
 
-    fn print(&mut self, message: &str) {
+    fn println(&mut self, message: &str) {
+        if self.overwrite && self.has_overwritable_line {
+            eprintln!(); // "finalize" the overwritable line
+        }
         eprintln!("{message}");
     }
 
@@ -128,12 +135,12 @@ impl Reporter {
 
     pub fn report_fatal_error(&mut self, err: &dyn fmt::Display) {
         let fatal = self.with_color(self.bold("FATAL:".into()), Color::Red);
-        eprintln!("{fatal} {err}");
+        self.println(&format!("{fatal} {err}"));
     }
 
     pub fn report_warning(&mut self, err: &dyn fmt::Display) {
         let warn = self.with_color(self.bold("WARN:".into()), Color::Yellow);
-        eprintln!("{warn} {err}");
+        self.println(&format!("{warn} {err}"));
     }
 }
 
@@ -149,7 +156,7 @@ impl TestReporter<'_> {
     pub fn fail(self) {
         self.parent.overwrite_line();
         let id = &self.test_id;
-        self.parent.print(&format!("Testing {id}: FAILED"));
+        self.parent.println(&format!("Testing {id}: FAILED"));
     }
 
     pub fn ok(self) {
@@ -157,7 +164,7 @@ impl TestReporter<'_> {
         let id = &self.test_id;
         let latency = self.started_at.elapsed();
         self.parent
-            .print(&format!("Testing {id}: OK ({latency:?})"));
+            .println(&format!("Testing {id}: OK ({latency:?})"));
     }
 }
 
@@ -174,7 +181,8 @@ impl BenchReporter<'_> {
         self.parent.overwrite_line();
         let id = &self.bench_id;
         let no_data = self.parent.bold("no data".into());
-        self.parent.print(&format!("Benchmarking {id}: {no_data}"));
+        self.parent
+            .println(&format!("Benchmarking {id}: {no_data}"));
     }
 
     pub fn ok(self, summary: CachegrindSummary, old_summary: Option<CachegrindSummary>) {
@@ -188,7 +196,7 @@ impl BenchReporter<'_> {
             String::new()
         };
         self.parent
-            .print(&format!("Benchmarking {id}: {ok}{latency}"));
+            .println(&format!("Benchmarking {id}: {ok}{latency}"));
 
         let access_summary: AccessSummary = summary.into();
         let old_access_summary = old_summary.map(AccessSummary::from);
@@ -196,7 +204,7 @@ impl BenchReporter<'_> {
         let diff = old_access_summary
             .map(|old| self.report_diff(access_summary.instructions, old.instructions))
             .unwrap_or_default();
-        self.parent.print(&format!(
+        self.parent.println(&format!(
             "  Instructions: {:>15} {diff}",
             access_summary.instructions
         ));
@@ -204,7 +212,7 @@ impl BenchReporter<'_> {
         let diff = old_access_summary
             .map(|old| self.report_diff(access_summary.l1_hits, old.l1_hits))
             .unwrap_or_default();
-        self.parent.print(&format!(
+        self.parent.println(&format!(
             "  L1 hits     : {:>15} {diff}",
             access_summary.l1_hits
         ));
@@ -212,7 +220,7 @@ impl BenchReporter<'_> {
         let diff = old_access_summary
             .map(|old| self.report_diff(access_summary.l3_hits, old.l3_hits))
             .unwrap_or_default();
-        self.parent.print(&format!(
+        self.parent.println(&format!(
             "  L2/L3 hits  : {:>15} {diff}",
             access_summary.l3_hits
         ));
@@ -220,7 +228,7 @@ impl BenchReporter<'_> {
         let diff = old_access_summary
             .map(|old| self.report_diff(access_summary.ram_accesses, old.ram_accesses))
             .unwrap_or_default();
-        self.parent.print(&format!(
+        self.parent.println(&format!(
             "  RAM accesses: {:>15} {diff}",
             access_summary.ram_accesses
         ));
@@ -228,7 +236,7 @@ impl BenchReporter<'_> {
         let diff = old_access_summary
             .map(|old| self.report_diff(access_summary.estimated_cycles(), old.estimated_cycles()))
             .unwrap_or_default();
-        self.parent.print(&format!(
+        self.parent.println(&format!(
             "  Est. cycles : {:>15} {diff}",
             access_summary.estimated_cycles()
         ));
