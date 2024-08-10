@@ -9,6 +9,8 @@ use std::{
     process::{Command, Stdio},
 };
 
+use crate::BenchmarkId;
+
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum CachegrindError {
     #[error("I/O error executing cachegrind: {0}")]
@@ -86,7 +88,7 @@ pub(crate) fn spawn_instrumented(
     mut command: Command,
     out_path: &str,
     this_executable: &str,
-    name: &str,
+    id: &BenchmarkId,
 ) -> Result<CachegrindSummary, CachegrindError> {
     if let Some(parent_dir) = Path::new(out_path).parent() {
         fs::create_dir_all(parent_dir).map_err(|error| CachegrindError::CreateOutputDir {
@@ -95,7 +97,12 @@ pub(crate) fn spawn_instrumented(
         })?;
     }
 
-    command.args([this_executable, "--cachegrind-instrument", "--exact", name]);
+    command.args([
+        this_executable,
+        "--cachegrind-instrument",
+        "--exact",
+        &id.to_string(),
+    ]);
     let status = command
         .stdout(Stdio::null())
         .stderr(Stdio::null())

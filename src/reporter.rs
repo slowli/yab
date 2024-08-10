@@ -7,7 +7,10 @@ use std::{
 
 use anes::{Attribute, ClearLine, Color, ResetAttributes, SetAttribute, SetForegroundColor};
 
-use crate::cachegrind::{AccessSummary, CachegrindSummary};
+use crate::{
+    cachegrind::{AccessSummary, CachegrindSummary},
+    BenchmarkId,
+};
 
 #[derive(Debug)]
 pub(crate) struct Reporter {
@@ -63,35 +66,64 @@ impl Reporter {
         }
     }
 
-    pub fn report_test(&mut self, name: &str) -> TestReporter<'_> {
-        self.print_overwritable(&format!("Testing {name}:"));
+    fn dimmed(&self, message: String) -> String {
+        if self.styling {
+            format!(
+                "{}{message}{ResetAttributes}",
+                SetAttribute(Attribute::Faint)
+            )
+        } else {
+            message
+        }
+    }
+
+    fn format_id(&self, id: &BenchmarkId) -> String {
+        let BenchmarkId {
+            name,
+            args,
+            location,
+        } = id;
+        let args = if let Some(args) = args {
+            format!("/{args}")
+        } else {
+            String::new()
+        };
+        let location = self.dimmed(format!(" @ {}:{}", location.file(), location.line()));
+        format!("{name}{args}{location}")
+    }
+
+    pub fn report_test(&mut self, id: &BenchmarkId) -> TestReporter<'_> {
+        let test_id = self.format_id(id);
+        self.print_overwritable(&format!("Testing {test_id}:"));
         TestReporter {
             parent: self,
-            test_name: name.to_owned(),
+            test_id,
             started_at: Instant::now(),
         }
     }
 
-    pub fn report_bench(&mut self, name: &str) -> BenchReporter<'_> {
-        self.print_overwritable(&format!("Benchmarking {name}:"));
+    pub fn report_bench(&mut self, id: &BenchmarkId) -> BenchReporter<'_> {
+        let bench_id = self.format_id(id);
+        self.print_overwritable(&format!("Benchmarking {bench_id}:"));
         BenchReporter {
             parent: self,
-            bench_name: name.to_owned(),
+            bench_id,
             started_at: Some(Instant::now()),
         }
     }
 
-    pub fn report_bench_result(&mut self, name: &str) -> BenchReporter<'_> {
-        self.print_overwritable(&format!("Loading benchmark {name}:"));
+    pub fn report_bench_result(&mut self, id: &BenchmarkId) -> BenchReporter<'_> {
+        let bench_id = self.format_id(id);
+        self.print_overwritable(&format!("Loading benchmark {bench_id}:"));
         BenchReporter {
             parent: self,
-            bench_name: name.to_owned(),
+            bench_id,
             started_at: None,
         }
     }
 
-    pub fn report_list_item(&mut self, name: &str) {
-        println!("{name}: benchmark");
+    pub fn report_list_item(&mut self, id: &BenchmarkId) {
+        println!("{id}: benchmark");
     }
 
     pub fn report_fatal_error(&mut self, err: &dyn fmt::Display) {
@@ -109,23 +141,23 @@ impl Reporter {
 #[must_use = "Test outcome should be reported"]
 pub(crate) struct TestReporter<'a> {
     parent: &'a mut Reporter,
-    test_name: String,
+    test_id: String,
     started_at: Instant,
 }
 
 impl TestReporter<'_> {
     pub fn fail(self) {
         self.parent.overwrite_line();
-        let name = &self.test_name;
-        self.parent.print(&format!("Testing {name}: FAILED"));
+        let id = &self.test_id;
+        self.parent.print(&format!("Testing {id}: FAILED"));
     }
 
     pub fn ok(self) {
         self.parent.overwrite_line();
-        let name = &self.test_name;
+        let id = &self.test_id;
         let latency = self.started_at.elapsed();
         self.parent
-            .print(&format!("Testing {name}: OK ({latency:?})"));
+            .print(&format!("Testing {id}: OK ({latency:?})"));
     }
 }
 
@@ -133,32 +165,30 @@ impl TestReporter<'_> {
 #[must_use = "Test outcome should be reported"]
 pub(crate) struct BenchReporter<'a> {
     parent: &'a mut Reporter,
-    bench_name: String,
+    bench_id: String,
     started_at: Option<Instant>,
 }
 
 impl BenchReporter<'_> {
     pub fn no_data(self) {
         self.parent.overwrite_line();
-        let name = &self.bench_name;
+        let id = &self.bench_id;
         let no_data = self.parent.bold("no data".into());
-        self.parent
-            .print(&format!("Benchmarking {name}: {no_data}"));
+        self.parent.print(&format!("Benchmarking {id}: {no_data}"));
     }
 
     pub fn ok(self, summary: CachegrindSummary, old_summary: Option<CachegrindSummary>) {
         self.parent.overwrite_line();
-        let name = &self.bench_name;
+        let id = &self.bench_id;
         let ok = self.parent.bold("OK".into());
         let latency = if let Some(started_at) = self.started_at {
             let latency = started_at.elapsed();
-            self.parent
-                .with_color(format!(" ({latency:?})"), Color::Gray)
+            self.parent.dimmed(format!(" ({latency:?})"))
         } else {
             String::new()
         };
         self.parent
-            .print(&format!("Benchmarking {name}: {ok}{latency}"));
+            .print(&format!("Benchmarking {id}: {ok}{latency}"));
 
         let access_summary: AccessSummary = summary.into();
         let old_access_summary = old_summary.map(AccessSummary::from);

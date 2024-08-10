@@ -2,7 +2,7 @@ use std::process::Command;
 
 use clap::Parser;
 
-use crate::BenchMode;
+use crate::{BenchMode, BenchmarkId};
 
 #[derive(Debug, Parser)]
 pub(crate) struct Options {
@@ -64,13 +64,16 @@ impl Options {
         }
     }
 
-    pub fn should_run(&self, name: &str) -> bool {
+    pub fn should_run(&self, id: &BenchmarkId) -> bool {
+        let id_string = id.to_string();
         if self.exact {
-            self.filter.as_ref().map_or(false, |filter| filter == name)
+            self.filter
+                .as_ref()
+                .map_or(false, |filter| *filter == id_string)
         } else {
             self.filter
                 .as_ref()
-                .map_or(true, |filter| name.contains(filter))
+                .map_or(true, |filter| id_string.contains(filter))
         }
     }
 

@@ -1,4 +1,4 @@
-use std::{env, fs, panic, process};
+use std::{env, fmt, fs, panic, panic::Location, process};
 
 use clap::Parser;
 
@@ -14,6 +14,45 @@ pub fn black_box<T>(dummy: T) -> T {
         let ret = std::ptr::read_volatile(&dummy);
         std::mem::forget(dummy);
         ret
+    }
+}
+
+#[derive(Debug)]
+pub struct BenchmarkId {
+    name: String,
+    location: &'static Location<'static>,
+    args: Option<String>,
+}
+
+impl fmt::Display for BenchmarkId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(args) = &self.args {
+            write!(formatter, "{}/{args}", self.name)
+        } else {
+            formatter.write_str(&self.name)
+        }
+    }
+}
+
+impl<S: Into<String>> From<S> for BenchmarkId {
+    #[track_caller]
+    fn from(name: S) -> Self {
+        Self {
+            name: name.into(),
+            location: Location::caller(),
+            args: None,
+        }
+    }
+}
+
+impl BenchmarkId {
+    #[track_caller]
+    pub fn new(name: impl Into<String>, args: impl fmt::Display) -> Self {
+        Self {
+            name: name.into(),
+            location: Location::caller(),
+            args: Some(args.to_string()),
+        }
     }
 }
 
@@ -59,19 +98,21 @@ impl Bencher {
         }
     }
 
+    #[track_caller]
     pub fn bench_function<T>(
         &mut self,
-        name: &str, // FIXME
+        id: impl Into<BenchmarkId>,
         mut bench_fn: impl FnMut() -> T,
     ) -> &mut Self {
-        if !self.options.should_run(name) {
+        let id = id.into();
+        if !self.options.should_run(&id) {
             return self;
         }
 
         match self.mode {
             BenchMode::Test => {
                 // Run the function once w/o instrumentation.
-                let test_reporter = self.reporter.report_test(name);
+                let test_reporter = self.reporter.report_test(&id);
                 if cfg!(panic = "unwind") {
                     let wrapped = panic::AssertUnwindSafe(move || drop(bench_fn()));
                     if panic::catch_unwind(wrapped).is_err() {
@@ -84,7 +125,7 @@ impl Bencher {
                 test_reporter.ok();
             }
             BenchMode::Bench => {
-                let out_path = format!("{}/{name}.cachegrind", self.options.cachegrind_out_dir);
+                let out_path = format!("{}/{id}.cachegrind", self.options.cachegrind_out_dir);
                 let old_summary = self.load_summary(&out_path);
                 if old_summary.is_some() {
                     let backup_path = format!("{out_path}.old");
@@ -96,9 +137,9 @@ impl Bencher {
                 }
 
                 let command = self.options.cachegrind_wrapper(&out_path);
-                let bench_reporter = self.reporter.report_bench(name);
+                let bench_reporter = self.reporter.report_bench(&id);
                 let cachegrind_result =
-                    cachegrind::spawn_instrumented(command, &out_path, &self.this_executable, name);
+                    cachegrind::spawn_instrumented(command, &out_path, &self.this_executable, &id);
                 let summary = match cachegrind_result {
                     Ok(summary) => summary,
                     Err(err) => {
@@ -109,18 +150,18 @@ impl Bencher {
                 bench_reporter.ok(summary, old_summary);
             }
             BenchMode::List => {
-                self.reporter.report_list_item(name);
+                self.reporter.report_list_item(&id);
             }
             BenchMode::PrintResults => {
-                let out_path = format!("{}/{name}.cachegrind", self.options.cachegrind_out_dir);
+                let out_path = format!("{}/{id}.cachegrind", self.options.cachegrind_out_dir);
                 let Some(summary) = self.load_summary(&out_path) else {
-                    self.reporter.report_bench_result(name).no_data();
+                    self.reporter.report_bench_result(&id).no_data();
                     return self;
                 };
                 let backup_path = format!("{out_path}.old");
                 let old_summary = self.load_summary(&backup_path);
                 self.reporter
-                    .report_bench_result(name)
+                    .report_bench_result(&id)
                     .ok(summary, old_summary);
             }
             BenchMode::Instrument => {
