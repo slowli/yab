@@ -11,7 +11,7 @@ use std::{
     process::{Command, Stdio},
 };
 
-use crate::BenchmarkId;
+use crate::{options::CachegrindOptions, BenchmarkId};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum CachegrindError {
@@ -113,15 +113,13 @@ pub(crate) fn spawn_instrumented(args: SpawnArgs) -> Result<CachegrindSummary, C
         })?;
     }
 
-    command.args([
-        this_executable,
-        "--cachegrind-instrument",
-        &format!("--cachegrind-iterations={iterations}"),
-    ]);
-    if is_baseline {
-        command.arg("--cachegrind-baseline");
-    }
-    command.args(["--exact", &id.to_string()]);
+    command.arg(this_executable);
+    let options = CachegrindOptions {
+        iterations,
+        is_baseline,
+        id: id.to_string(),
+    };
+    options.push_args(&mut command);
 
     let status = command
         .stdout(Stdio::null())
@@ -320,7 +318,6 @@ impl Instrumentation {
         Self { terminate: false }
     }
 
-    #[inline(always)]
     pub fn start(self) {
         if crate::black_box(self.terminate) {
             #[cfg(feature = "instrumentation")]

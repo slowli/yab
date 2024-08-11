@@ -1,4 +1,4 @@
-use std::process::Command;
+use std::{env, num, process, process::Command};
 
 use clap::Parser;
 
@@ -19,24 +19,10 @@ const DEFAULT_CACHEGRIND_WRAPPER: &[&str] = &[
 ];
 
 #[derive(Debug, Parser)]
-pub(crate) struct Options {
+pub(crate) struct BenchOptions {
     /// Whether to run benchmarks as opposed to tests.
     #[arg(long, hide = true)]
     bench: bool,
-    /// Instrument benchmarks with cachegrind instrumentation.
-    #[arg(long, hide = true, conflicts_with_all = ["bench", "list"])]
-    cachegrind_instrument: bool,
-    /// Number of iterations to execute.
-    #[arg(
-        long,
-        hide = true,
-        default_value_t = 1,
-        requires = "cachegrind_instrument"
-    )]
-    cachegrind_iterations: u64,
-    /// Is this the baseline bench? If so, it will stop after setup on the last iteration.
-    #[arg(long, hide = true, requires = "cachegrind_instrument")]
-    cachegrind_baseline: bool,
 
     /// Wrapper to call `cachegrind` as. Beware that changing params will likely render results not comparable.
     /// `{OUT}` will be replaced with the path to the output file.
@@ -70,7 +56,7 @@ pub(crate) struct Options {
     filter: Option<String>,
 }
 
-impl Options {
+impl BenchOptions {
     pub fn validate(&self, reporter: &mut Reporter) -> bool {
         if self.warm_up_instructions == 0 {
             reporter.report_fatal_error(&"`warm_up_instructions` must be positive");
@@ -84,12 +70,7 @@ impl Options {
     }
 
     pub fn mode(&self) -> BenchMode {
-        if self.cachegrind_instrument {
-            BenchMode::Instrument {
-                iterations: self.cachegrind_iterations,
-                is_baseline: self.cachegrind_baseline,
-            }
-        } else if self.list {
+        if self.list {
             BenchMode::List
         } else if self.print {
             BenchMode::PrintResults
@@ -123,5 +104,117 @@ impl Options {
             }
         }
         command
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+enum CachegrindOptionsError {
+    #[error("too few args; should be used as `--cachegrind-instrument ITERS +|- ID")]
+    TooFewArgs,
+    #[error("failed parsing iterations (must be a positive integer): {0}")]
+    Iterations(#[source] num::ParseIntError),
+    #[error("failed parsing baseline flag")]
+    IsBaseline,
+}
+
+#[derive(Debug)]
+pub(crate) struct CachegrindOptions {
+    pub iterations: u64,
+    pub is_baseline: bool,
+    pub id: String,
+    // TODO: consider index?
+}
+
+impl CachegrindOptions {
+    const MARKER: &'static str = "--cachegrind-instrument";
+
+    fn new() -> Result<Option<Self>, CachegrindOptionsError> {
+        Self::parse_args(env::args())
+    }
+
+    pub fn push_args(&self, command: &mut Command) {
+        let is_baseline = if self.is_baseline { "+" } else { "-" };
+        command.args([
+            Self::MARKER,
+            &self.iterations.to_string(),
+            is_baseline,
+            &self.id,
+        ]);
+    }
+
+    fn parse_args(
+        mut args: impl Iterator<Item = String>,
+    ) -> Result<Option<Self>, CachegrindOptionsError> {
+        args.next();
+        if args.next().as_deref() != Some(Self::MARKER) {
+            return Ok(None);
+        }
+
+        let iterations = args.next().ok_or(CachegrindOptionsError::TooFewArgs)?;
+        let iterations: u64 = iterations
+            .parse()
+            .map_err(CachegrindOptionsError::Iterations)?;
+        let is_baseline = args.next().ok_or(CachegrindOptionsError::TooFewArgs)?;
+        let is_baseline = match is_baseline.as_str() {
+            "+" => true,
+            "-" => false,
+            _ => return Err(CachegrindOptionsError::IsBaseline),
+        };
+        let id = args.next().ok_or(CachegrindOptionsError::TooFewArgs)?;
+        Ok(Some(Self {
+            iterations,
+            is_baseline,
+            id,
+        }))
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum Options {
+    Bench(BenchOptions),
+    Cachegrind(CachegrindOptions),
+}
+
+impl Options {
+    pub fn new() -> Self {
+        match CachegrindOptions::new() {
+            Err(err) => {
+                eprintln!("Failed starting instrumented binary: {err}");
+                process::exit(1);
+            }
+            Ok(Some(options)) => return Self::Cachegrind(options),
+            Ok(None) => { /* continue */ }
+        }
+
+        let options = BenchOptions::parse();
+        Self::Bench(options)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::iter;
+
+    use assert_matches::assert_matches;
+
+    use super::*;
+
+    #[test]
+    fn parsing_cachegrind_options() {
+        let options = CachegrindOptions::parse_args(iter::empty());
+        assert_matches!(options, Ok(None));
+        let args = ["--bench fib"].map(str::to_owned).into_iter();
+        let options = CachegrindOptions::parse_args(args);
+        assert_matches!(options, Ok(None));
+
+        let args = ["--cachegrind-instrument 123 + fib"]
+            .map(str::to_owned)
+            .into_iter();
+        let options = CachegrindOptions::parse_args(args)
+            .unwrap()
+            .expect("no options");
+        assert_eq!(options.iterations, 123);
+        assert!(options.is_baseline);
+        assert_eq!(options.id, "fib");
     }
 }

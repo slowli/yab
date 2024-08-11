@@ -6,15 +6,17 @@ use std::{
     process,
 };
 
-use clap::Parser;
-
-use self::{options::Options, reporter::Reporter};
+use self::{
+    options::{BenchOptions, Options},
+    reporter::Reporter,
+};
 pub use crate::{
     cachegrind::{AccessSummary, CachegrindSummary, Instrumentation},
     output::{BenchmarkOutput, BenchmarkProcessor},
 };
 use crate::{
     cachegrind::{CachegrindError, SpawnArgs},
+    options::CachegrindOptions,
     reporter::BenchReporter,
 };
 
@@ -35,12 +37,25 @@ pub fn black_box<T>(dummy: T) -> T {
 pub struct BenchmarkId {
     name: String,
     location: &'static Location<'static>,
-    args: Option<String>,
+    args: Option<String>, // TODO: is this needed?
 }
 
 impl PartialEq for BenchmarkId {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name && self.args == other.args
+    }
+}
+
+impl PartialEq<&str> for BenchmarkId {
+    fn eq(&self, other: &&str) -> bool {
+        if let Some(args) = &self.args {
+            self.name.len() + 1 + args.len() == other.len()
+                && other.starts_with(&self.name)
+                && other.ends_with(args)
+                && other.as_bytes()[self.name.len()] == b'/'
+        } else {
+            self.name == *other
+        }
     }
 }
 
@@ -83,10 +98,6 @@ impl BenchmarkId {
             args: Some(args.to_string()),
         }
     }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -95,12 +106,22 @@ enum BenchMode {
     Bench,
     List,
     PrintResults,
-    Instrument { iterations: u64, is_baseline: bool },
 }
 
 #[derive(Debug)]
 pub struct Bencher {
-    options: Options,
+    inner: BencherInner,
+}
+
+#[derive(Debug)]
+enum BencherInner {
+    Main(MainBencher),
+    Cachegrind(CachegrindOptions),
+}
+
+#[derive(Debug)]
+pub struct MainBencher {
+    options: BenchOptions,
     mode: BenchMode,
     processor: Box<dyn BenchmarkProcessor>,
     reporter: Reporter,
@@ -109,33 +130,19 @@ pub struct Bencher {
 
 impl Default for Bencher {
     fn default() -> Self {
-        let options = Options::parse();
-        let mut reporter = Reporter::default();
-        if !options.validate(&mut reporter) {
-            process::exit(1);
-        }
-
-        let mode = options.mode();
-        if matches!(mode, BenchMode::Bench) {
-            if let Err(err) = cachegrind::check() {
-                reporter.report_fatal_error(&err);
-                process::exit(1);
-            }
-        }
-
-        Self {
-            mode,
-            options,
-            processor: Box::new(()),
-            reporter,
-            this_executable: env::args().next().expect("no executable arg"),
-        }
+        let inner = match Options::new() {
+            Options::Bench(options) => BencherInner::Main(MainBencher::new(options)),
+            Options::Cachegrind(options) => BencherInner::Cachegrind(options),
+        };
+        Self { inner }
     }
 }
 
 impl Bencher {
     pub fn with_processor(mut self, processor: impl BenchmarkProcessor + 'static) -> Self {
-        self.processor = Box::new(processor);
+        if let BencherInner::Main(bencher) = &mut self.inner {
+            bencher.processor = Box::new(processor);
+        }
         self
     }
 
@@ -162,7 +169,45 @@ impl Bencher {
         self
     }
 
-    fn bench_inner<T>(&mut self, id: BenchmarkId, mut bench_fn: impl FnMut(Instrumentation) -> T) {
+    fn bench_inner<T>(&mut self, id: BenchmarkId, bench_fn: impl FnMut(Instrumentation) -> T) {
+        match &mut self.inner {
+            BencherInner::Main(bencher) => {
+                bencher.bench(id, bench_fn);
+            }
+            BencherInner::Cachegrind(options) => {
+                if id != options.id.as_str() {
+                    return;
+                }
+                cachegrind::run_instrumented(bench_fn, options.iterations, options.is_baseline);
+            }
+        }
+    }
+}
+
+impl MainBencher {
+    fn new(options: BenchOptions) -> Self {
+        let mut reporter = Reporter::default();
+        if !options.validate(&mut reporter) {
+            process::exit(1);
+        }
+        let mode = options.mode();
+        if matches!(mode, BenchMode::Bench) {
+            if let Err(err) = cachegrind::check() {
+                reporter.report_fatal_error(&err);
+                process::exit(1);
+            }
+        }
+
+        Self {
+            mode,
+            options,
+            processor: Box::new(()),
+            reporter,
+            this_executable: env::args().next().expect("no executable arg"),
+        }
+    }
+
+    fn bench<T>(&mut self, id: BenchmarkId, mut bench_fn: impl FnMut(Instrumentation) -> T) {
         if !self.options.should_run(&id) {
             return;
         }
@@ -221,12 +266,6 @@ impl Bencher {
                         old_summary,
                     },
                 );
-            }
-            BenchMode::Instrument {
-                iterations,
-                is_baseline,
-            } => {
-                cachegrind::run_instrumented(bench_fn, iterations, is_baseline);
             }
         }
     }

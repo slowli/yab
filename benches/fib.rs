@@ -69,8 +69,8 @@ impl Drop for BenchmarkChecker {
         );
         let guard_output = &self.results[&BenchmarkId::from("fib_guard")];
         assert!(
-            short_output.summary.instructions.total > 10 * guard_output.summary.instructions.total,
-            "guard={guard_output:?}, short={short_output:?}"
+            long_output.summary.instructions.total > 10 * guard_output.summary.instructions.total,
+            "guard={guard_output:?}, long={long_output:?}"
         );
     }
 }
