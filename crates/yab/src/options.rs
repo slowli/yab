@@ -203,11 +203,11 @@ mod tests {
     fn parsing_cachegrind_options() {
         let options = CachegrindOptions::parse_args(iter::empty());
         assert_matches!(options, Ok(None));
-        let args = ["--bench fib"].map(str::to_owned).into_iter();
+        let args = ["yab", "--bench", "fib"].map(str::to_owned).into_iter();
         let options = CachegrindOptions::parse_args(args);
         assert_matches!(options, Ok(None));
 
-        let args = ["--cachegrind-instrument 123 + fib"]
+        let args = ["yab", "--cachegrind-instrument", "123", "+", "fib"]
             .map(str::to_owned)
             .into_iter();
         let options = CachegrindOptions::parse_args(args)
