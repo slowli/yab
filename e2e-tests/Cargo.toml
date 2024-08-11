@@ -9,7 +9,12 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-yab = { path = "../crates/yab" }
+serde_json.workspace = true
+
+yab = { path = "../crates/yab", features = ["serde"] }
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [[bench]]
 name = "fib"

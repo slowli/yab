@@ -1,5 +1,10 @@
 use yab::{black_box, Bencher, BenchmarkId};
 
+use crate::exporter::BenchmarkExporter;
+pub use crate::exporter::EXPORTER_OUTPUT_VAR;
+
+mod exporter;
+
 fn fibonacci(n: u64) -> u64 {
     match n {
         0 => 1,
@@ -17,7 +22,7 @@ impl Drop for FibGuard {
 }
 
 pub fn main() {
-    let mut bencher = Bencher::default();
+    let mut bencher = Bencher::default().with_processor(BenchmarkExporter::default());
     bencher
         .bench("fib_short", || fibonacci(black_box(10)))
         .bench("fib_long", || fibonacci(black_box(30)));
