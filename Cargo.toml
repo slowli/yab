@@ -1,26 +1,18 @@
-[package]
-name = "yab"
-version = "0.1.0"
+[workspace]
+members = ["crates/yab", "e2e-tests"]
+resolver = "2"
+
+[workspace.package]
+version = "0.2.0"
 edition = "2021"
+rust-version = "1.70"
+authors = ["Alex Ostrovski <ostrovski.alex@gmail.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/slowli/yab"
 
-[dependencies]
-clap = { version = "4.5.15", features = ["derive", "env", "wrap_help"] }
-crabgrind = { version = "0.1.11", optional = true }
-anes = "0.2.0"
-thiserror = "1.0.63"
-
-criterion = "0.5.1" # FIXME
-iai = "0.1.1" # FIXME
-
-[dev-dependencies]
+[workspace.dependencies]
+anes = "0.1"
 assert_matches = "1.5.0"
-
-[features]
-default = []
-# Enables cachegrind instrumentation. Allows to get more precise results, but requires
-# cachegrind >=3.22.0.
-instrumentation = ["dep:crabgrind"]
-
-[[bench]]
-name = "fib"
-harness = false
+clap = "4.5.15"
+crabgrind = "0.1.11"
+thiserror = "1.0.63"

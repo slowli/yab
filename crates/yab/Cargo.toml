@@ -1,0 +1,24 @@
+[package]
+name = "yab"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Private dependencies (not exposed in public crate APIs)
+clap = { workspace = true, features = ["derive", "env", "wrap_help"] }
+crabgrind = { workspace = true, optional = true }
+anes.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+assert_matches = "1.5.0"
+
+[features]
+default = []
+# Enables cachegrind instrumentation. Allows to get more precise results, but requires
+# cachegrind >=3.22.0.
+instrumentation = ["dep:crabgrind"]

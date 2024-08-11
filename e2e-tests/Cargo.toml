@@ -1,0 +1,16 @@
+[package]
+name = "yab-e2e-tests"
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+yab = { path = "../crates/yab" }
+
+[[bench]]
+name = "fib"
+harness = false
