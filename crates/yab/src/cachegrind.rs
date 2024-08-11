@@ -11,6 +11,9 @@ use std::{
     process::{Command, Stdio},
 };
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 use crate::{options::CachegrindOptions, BenchmarkId};
 
 #[derive(Debug, thiserror::Error)]
@@ -142,7 +145,8 @@ pub(crate) fn spawn_instrumented(args: SpawnArgs) -> Result<CachegrindSummary, C
         .map_err(|err| err.generalize(out_path.to_owned()))
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
 pub struct CachegrindDataPoint {
     pub total: u64,
@@ -162,7 +166,8 @@ impl ops::Sub for CachegrindDataPoint {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
 pub struct CachegrindSummary {
     pub instructions: CachegrindDataPoint,
