@@ -2,7 +2,7 @@ use std::{env, num, process, process::Command};
 
 use clap::Parser;
 
-use crate::{reporter::Reporter, BenchMode, BenchmarkId};
+use crate::{bencher::BenchMode, reporter::Reporter, BenchmarkId};
 
 const DEFAULT_CACHEGRIND_WRAPPER: &[&str] = &[
     "setarch",
