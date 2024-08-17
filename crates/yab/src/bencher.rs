@@ -1,12 +1,13 @@
 //! [`Bencher`] and tightly related types.
 
-use std::{env, fs, panic, process};
+use std::{env, fs, mem, panic, process, sync::Arc, thread, thread::JoinHandle};
 
 use crate::{
     cachegrind,
     cachegrind::{CachegrindError, SpawnArgs},
     options::{BenchOptions, CachegrindOptions, Options},
-    reporter::{BenchReporter, Reporter},
+    reporter::Reporter,
+    utils::Semaphore,
     BenchmarkId, BenchmarkOutput, BenchmarkProcessor, CachegrindSummary, Instrumentation,
 };
 
@@ -23,9 +24,19 @@ pub(crate) enum BenchMode {
 struct MainBencher {
     options: BenchOptions,
     mode: BenchMode,
-    processor: Box<dyn BenchmarkProcessor>,
+    processor: Arc<dyn BenchmarkProcessor>,
     reporter: Reporter,
     this_executable: String,
+    jobs_semaphore: Arc<Semaphore>,
+    jobs: Vec<JoinHandle<()>>,
+}
+
+impl Drop for MainBencher {
+    fn drop(&mut self) {
+        for job in mem::take(&mut self.jobs) {
+            job.join().expect("benchmarking failed");
+        }
+    }
 }
 
 impl MainBencher {
@@ -44,10 +55,12 @@ impl MainBencher {
 
         Self {
             mode,
-            options,
-            processor: Box::new(()),
+            processor: Arc::new(()),
             reporter,
             this_executable: env::args().next().expect("no executable arg"),
+            jobs_semaphore: Arc::new(Semaphore::new(options.jobs.get())),
+            options,
+            jobs: vec![],
         }
     }
 
@@ -73,47 +86,43 @@ impl MainBencher {
                 test_reporter.ok();
             }
             BenchMode::Bench => {
-                self.run_benchmark(id);
+                let executor = self.executor(id);
+                let jobs_semaphore = self.jobs_semaphore.clone();
+                self.jobs.push(thread::spawn(move || {
+                    let _permit = jobs_semaphore.acquire_owned();
+                    executor.run_benchmark();
+                }));
             }
             BenchMode::List => {
                 self.reporter.report_list_item(&id);
             }
             BenchMode::PrintResults => {
-                let baseline_path = format!(
-                    "{}/{id}.baseline.cachegrind",
-                    self.options.cachegrind_out_dir
-                );
-                let full_path = format!("{}/{id}.cachegrind", self.options.cachegrind_out_dir);
-                let Some(baseline) = self.load_summary(&baseline_path) else {
-                    self.reporter.report_bench_result(&id).no_data();
-                    return;
-                };
-                let Some(full) = self.load_summary(&full_path) else {
-                    self.reporter.report_bench_result(&id).no_data();
-                    return;
-                };
-                let summary = full - baseline;
-
-                let old_baseline_path = format!("{baseline_path}.old");
-                let old_full_path = format!("{full_path}.old");
-                let old_baseline = self.load_summary(&old_baseline_path);
-                let old_summary = old_baseline
-                    .and_then(|baseline| Some(self.load_summary(&old_full_path)? - baseline));
-
-                self.reporter
-                    .report_bench_result(&id)
-                    .ok(summary, old_summary);
-                self.processor.process_benchmark(
-                    &id,
-                    BenchmarkOutput {
-                        summary,
-                        old_summary,
-                    },
-                );
+                self.executor(id).report_benchmark_result();
             }
         }
     }
 
+    fn executor(&self, id: BenchmarkId) -> Executor {
+        Executor {
+            options: self.options.clone(),
+            this_executable: self.this_executable.clone(),
+            reporter: self.reporter.clone(),
+            processor: self.processor.clone(),
+            id,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Executor {
+    options: BenchOptions,
+    this_executable: String,
+    reporter: Reporter,
+    processor: Arc<dyn BenchmarkProcessor>,
+    id: BenchmarkId,
+}
+
+impl Executor {
     /// The workflow is as follows:
     ///
     /// 1. Run the benchmark function once to understand how many iterations are necessary for warm-up, `n`.
@@ -122,12 +131,12 @@ impl MainBencher {
     /// 3. Run the full benchmark with `n + 1` iterations. The "timing" of this run is
     ///    `(n + 1) * setup + (n + 1) * bench + const`.
     /// 4. Subtract baseline stats from the full stats. The difference is equal to `bench`.
-    fn run_benchmark(&mut self, id: BenchmarkId) {
+    fn run_benchmark(self) {
         let baseline_path = format!(
-            "{}/{id}.baseline.cachegrind",
-            self.options.cachegrind_out_dir
+            "{}/{}.baseline.cachegrind",
+            self.options.cachegrind_out_dir, self.id
         );
-        let full_path = format!("{}/{id}.cachegrind", self.options.cachegrind_out_dir);
+        let full_path = format!("{}/{}.cachegrind", self.options.cachegrind_out_dir, self.id);
         let old_baseline = self.load_and_backup_summary(&baseline_path);
         let old_summary = old_baseline.and_then(|baseline| {
             let full = self.load_and_backup_summary(&full_path)?;
@@ -136,20 +145,19 @@ impl MainBencher {
 
         // Use `baseline_path` in case we won't run the baseline after calibration
         let command = self.options.cachegrind_wrapper(&baseline_path);
-        let mut bench_reporter = self.reporter.report_bench(&id);
+        let bench_reporter = self.reporter.report_bench(&self.id);
         let cachegrind_result = cachegrind::spawn_instrumented(SpawnArgs {
             command,
             out_path: &baseline_path,
             this_executable: &self.this_executable,
-            id: &id,
+            id: &self.id,
             iterations: 2,
             is_baseline: true,
         });
-        let summary = Self::unwrap_summary(cachegrind_result, &mut bench_reporter);
+        let summary = self.unwrap_summary(cachegrind_result);
 
         let estimated_iterations = (self.options.warm_up_instructions / summary.instructions.total)
             .clamp(1, self.options.max_iterations);
-        bench_reporter.calibration(&summary, estimated_iterations);
         let baseline_summary = if estimated_iterations == 1 {
             summary
         } else {
@@ -159,11 +167,11 @@ impl MainBencher {
                 command,
                 out_path: &baseline_path,
                 this_executable: &self.this_executable,
-                id: &id,
+                id: &self.id,
                 iterations: estimated_iterations + 1,
                 is_baseline: true,
             });
-            let summary = Self::unwrap_summary(cachegrind_result, &mut bench_reporter);
+            let summary = self.unwrap_summary(cachegrind_result);
             bench_reporter.baseline(&summary);
             summary
         };
@@ -173,16 +181,16 @@ impl MainBencher {
             command,
             out_path: &full_path,
             this_executable: &self.this_executable,
-            id: &id,
+            id: &self.id,
             iterations: estimated_iterations + 1,
             is_baseline: false,
         });
-        let full_summary = Self::unwrap_summary(cachegrind_result, &mut bench_reporter);
+        let full_summary = self.unwrap_summary(cachegrind_result);
         let summary = full_summary - baseline_summary;
 
         bench_reporter.ok(summary, old_summary);
         self.processor.process_benchmark(
-            &id,
+            &self.id,
             BenchmarkOutput {
                 summary,
                 old_summary,
@@ -190,7 +198,41 @@ impl MainBencher {
         );
     }
 
-    fn load_summary(&mut self, path: &str) -> Option<CachegrindSummary> {
+    fn report_benchmark_result(self) {
+        let baseline_path = format!(
+            "{}/{}.baseline.cachegrind",
+            self.options.cachegrind_out_dir, self.id
+        );
+        let full_path = format!("{}/{}.cachegrind", self.options.cachegrind_out_dir, self.id);
+        let Some(baseline) = self.load_summary(&baseline_path) else {
+            self.reporter.report_bench_result(&self.id).no_data();
+            return;
+        };
+        let Some(full) = self.load_summary(&full_path) else {
+            self.reporter.report_bench_result(&self.id).no_data();
+            return;
+        };
+        let summary = full - baseline;
+
+        let old_baseline_path = format!("{baseline_path}.old");
+        let old_full_path = format!("{full_path}.old");
+        let old_baseline = self.load_summary(&old_baseline_path);
+        let old_summary =
+            old_baseline.and_then(|baseline| Some(self.load_summary(&old_full_path)? - baseline));
+
+        self.reporter
+            .report_bench_result(&self.id)
+            .ok(summary, old_summary);
+        self.processor.process_benchmark(
+            &self.id,
+            BenchmarkOutput {
+                summary,
+                old_summary,
+            },
+        );
+    }
+
+    fn load_summary(&self, path: &str) -> Option<CachegrindSummary> {
         fs::File::open(path)
             .ok()
             .and_then(|file| match CachegrindSummary::new(file, path) {
@@ -202,7 +244,7 @@ impl MainBencher {
             })
     }
 
-    fn load_and_backup_summary(&mut self, path: &str) -> Option<CachegrindSummary> {
+    fn load_and_backup_summary(&self, path: &str) -> Option<CachegrindSummary> {
         let summary = self.load_summary(path);
         if summary.is_some() {
             let backup_path = format!("{path}.old");
@@ -215,13 +257,13 @@ impl MainBencher {
     }
 
     fn unwrap_summary(
+        &self,
         result: Result<CachegrindSummary, CachegrindError>,
-        reporter: &mut BenchReporter<'_>,
     ) -> CachegrindSummary {
         match result {
             Ok(summary) => summary,
             Err(err) => {
-                reporter.fatal(&err);
+                self.reporter.report_fatal_error(&err);
                 process::exit(1);
             }
         }
@@ -250,9 +292,9 @@ impl Default for Bencher {
 }
 
 impl Bencher {
-    pub fn with_processor(mut self, processor: impl BenchmarkProcessor + 'static) -> Self {
+    pub fn with_processor(mut self, processor: impl BenchmarkProcessor) -> Self {
         if let BencherInner::Main(bencher) = &mut self.inner {
-            bencher.processor = Box::new(processor);
+            bencher.processor = Arc::new(processor);
         }
         self
     }

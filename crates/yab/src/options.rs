@@ -1,4 +1,4 @@
-use std::{env, num, process, process::Command};
+use std::{env, num, num::NonZeroUsize, process, process::Command};
 
 use clap::Parser;
 
@@ -18,7 +18,7 @@ const DEFAULT_CACHEGRIND_WRAPPER: &[&str] = &[
     "--cachegrind-out-file={OUT}",
 ];
 
-#[derive(Debug, Parser)]
+#[derive(Debug, Clone, Parser)]
 pub(crate) struct BenchOptions {
     /// Whether to run benchmarks as opposed to tests.
     #[arg(long, hide = true)]
@@ -33,7 +33,7 @@ pub(crate) struct BenchOptions {
     cachegrind_wrapper: Vec<String>,
     /// Target number of instructions for the benchmark warm-up. Note that this number may not be reached
     /// for very fast benchmarks.
-    #[arg(long, default_value_t = 1_000_000)]
+    #[arg(long = "warm-up", default_value_t = 1_000_000)]
     pub warm_up_instructions: u64,
     /// Maximum number of iterations for a single benchmark.
     #[arg(long, default_value_t = 1_000)]
@@ -41,6 +41,9 @@ pub(crate) struct BenchOptions {
     /// Base directory to put cachegrind outputs into. Will be created if absent.
     #[arg(long, default_value = "target/yab", env = "CACHEGRIND_OUT_DIR")]
     pub cachegrind_out_dir: String,
+    /// Maximum number of benchmarks to run in parallel.
+    #[arg(long, short = 'j', default_value_t = NonZeroUsize::new(num_cpus::get().max(1)).unwrap())]
+    pub jobs: NonZeroUsize,
 
     /// List all benchmarks instead of running them.
     #[arg(long, conflicts_with = "print")]

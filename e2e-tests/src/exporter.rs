@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, fs, io};
+use std::{collections::HashMap, env, fs, io, sync::Mutex};
 
 use yab::{BenchmarkId, BenchmarkOutput, BenchmarkProcessor};
 
@@ -6,12 +6,12 @@ pub const EXPORTER_OUTPUT_VAR: &str = "YAB_BENCHMARKS_JSON";
 
 #[derive(Debug, Default)]
 pub(crate) struct BenchmarkExporter {
-    outputs: HashMap<String, BenchmarkOutput>,
+    outputs: Mutex<HashMap<String, BenchmarkOutput>>,
 }
 
 impl BenchmarkProcessor for BenchmarkExporter {
-    fn process_benchmark(&mut self, id: &BenchmarkId, output: BenchmarkOutput) {
-        self.outputs.insert(id.to_string(), output);
+    fn process_benchmark(&self, id: &BenchmarkId, output: BenchmarkOutput) {
+        self.outputs.lock().unwrap().insert(id.to_string(), output);
     }
 }
 
@@ -24,6 +24,7 @@ impl Drop for BenchmarkExporter {
             panic!("Failed writing outputs to `{out_path}`: {err}");
         });
         let out_file = io::BufWriter::new(out_file);
-        serde_json::to_writer_pretty(out_file, &self.outputs).expect("failed exporting results");
+        let outputs = Mutex::get_mut(&mut self.outputs).unwrap();
+        serde_json::to_writer_pretty(out_file, outputs).expect("failed exporting results");
     }
 }

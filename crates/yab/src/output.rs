@@ -13,13 +13,13 @@ pub struct BenchmarkOutput {
     pub old_summary: Option<CachegrindSummary>,
 }
 
-pub trait BenchmarkProcessor: 'static + Send + fmt::Debug {
-    fn process_benchmark(&mut self, id: &BenchmarkId, output: BenchmarkOutput);
+pub trait BenchmarkProcessor: 'static + Send + Sync + fmt::Debug {
+    fn process_benchmark(&self, id: &BenchmarkId, output: BenchmarkOutput);
 }
 
 /// Default processor that does nothing.
 impl BenchmarkProcessor for () {
-    fn process_benchmark(&mut self, _id: &BenchmarkId, _output: BenchmarkOutput) {
+    fn process_benchmark(&self, _id: &BenchmarkId, _output: BenchmarkOutput) {
         // Do nothing
     }
 }

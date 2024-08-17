@@ -213,7 +213,7 @@ fn printing_benchmark_results() {
     let benchmark_names: HashSet<_> = stderr
         .lines()
         .filter_map(|line| {
-            line.strip_prefix("Loading benchmark ")?
+            line.strip_prefix("Benchmarking ")?
                 .split_whitespace()
                 .next()
         })
