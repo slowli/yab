@@ -9,6 +9,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+rand = { workspace = true, features = ["small_rng"] }
 serde_json.workspace = true
 
 yab = { path = "../crates/yab", features = ["serde"] }
@@ -16,6 +17,9 @@ yab = { path = "../crates/yab", features = ["serde"] }
 [dev-dependencies]
 tempfile.workspace = true
 
+[features]
+instrumentation = ["yab/instrumentation"]
+
 [[bench]]
-name = "fib"
+name = "all"
 harness = false

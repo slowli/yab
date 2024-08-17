@@ -1,3 +1,5 @@
+pub use std::hint::black_box;
+
 pub use crate::{
     bencher::Bencher,
     cachegrind::{AccessSummary, CachegrindSummary, Instrumentation},
@@ -11,11 +13,3 @@ mod id;
 mod options;
 mod output;
 mod reporter;
-
-pub fn black_box<T>(dummy: T) -> T {
-    unsafe {
-        let ret = std::ptr::read_volatile(&dummy);
-        std::mem::forget(dummy);
-        ret
-    }
-}

@@ -1,9 +1,12 @@
+use rand::{rngs::SmallRng, Rng, SeedableRng};
 use yab::{black_box, Bencher, BenchmarkId};
 
 use crate::exporter::BenchmarkExporter;
 pub use crate::exporter::EXPORTER_OUTPUT_VAR;
 
 mod exporter;
+
+const RNG_SEED: u64 = 123;
 
 fn fibonacci(n: u64) -> u64 {
     match n {
@@ -42,4 +45,22 @@ pub fn main() {
         fibonacci(black_box(10));
         FibGuard(20)
     });
+
+    let mut rng = SmallRng::seed_from_u64(RNG_SEED);
+    let random_bytes: Vec<usize> = (0..10_000_000).map(|_| rng.gen()).collect();
+
+    for len in [1_000_000, 10_000_000] {
+        let id = BenchmarkId::new("random_walk", len);
+        bencher.bench(id, || {
+            let random_bytes = black_box(&random_bytes[..len]);
+            let mut pos = 0_usize;
+            for _ in 0..100_000 {
+                pos = black_box(
+                    pos.wrapping_mul(31)
+                        .wrapping_add(random_bytes[black_box(pos) % len]),
+                );
+            }
+            pos
+        });
+    }
 }

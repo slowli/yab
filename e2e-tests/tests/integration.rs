@@ -1,3 +1,6 @@
+//! Should preferably run in the release mode to emulate real benchmark env, and because some benches
+//! are quite slow otherwise.
+
 use std::{
     collections::{HashMap, HashSet},
     fs, io,
@@ -18,6 +21,8 @@ const EXPECTED_BENCH_NAMES: &[&str] = &[
     "fib/25",
     "fib_guard",
     "fib_setup",
+    "random_walk/1000000",
+    "random_walk/10000000",
 ];
 
 fn read_outputs(path: &Path) -> HashMap<String, BenchmarkOutput> {
@@ -165,6 +170,9 @@ fn assert_initial_outputs(outputs: &HashMap<String, BenchmarkOutput>) {
         long_output.summary.instructions.total > 10 * guard_output.summary.instructions.total,
         "guard={guard_output:?}, long={long_output:?}"
     );
+
+    let long_random_walk_output = AccessSummary::from(outputs["random_walk/10000000"].summary);
+    assert!(long_random_walk_output.ram_accesses > 1_000);
 }
 
 fn assert_new_outputs(
@@ -221,7 +229,7 @@ fn printing_benchmark_results() {
         .lines()
         .filter(|line| line.ends_with("no data"))
         .count();
-    assert_eq!(benchmarks_without_data, 3); // `fib/` benches
+    assert_eq!(benchmarks_without_data, 5); // `fib/` and `random_walk/` benches
 
     // Check that only outputs for benches that have already been run are supplied to the processor.
     let outputs = read_outputs(&out_path);
