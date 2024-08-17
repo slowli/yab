@@ -8,7 +8,7 @@ use crate::{
     options::{BenchOptions, CachegrindOptions, Options},
     reporter::Reporter,
     utils::Semaphore,
-    BenchmarkId, BenchmarkOutput, BenchmarkProcessor, CachegrindSummary, Instrumentation,
+    BenchmarkId, BenchmarkOutput, BenchmarkProcessor, CachegrindSummary, Capture,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -64,7 +64,7 @@ impl MainBencher {
         }
     }
 
-    fn bench<T>(&mut self, id: BenchmarkId, mut bench_fn: impl FnMut(Instrumentation) -> T) {
+    fn bench<T>(&mut self, id: BenchmarkId, mut bench_fn: impl FnMut(Capture) -> T) {
         if !self.options.should_run(&id) {
             return;
         }
@@ -74,14 +74,13 @@ impl MainBencher {
                 // Run the function once w/o instrumentation.
                 let test_reporter = self.reporter.report_test(&id);
                 if cfg!(panic = "unwind") {
-                    let wrapped =
-                        panic::AssertUnwindSafe(move || drop(bench_fn(Instrumentation::no_op())));
+                    let wrapped = panic::AssertUnwindSafe(move || drop(bench_fn(Capture::no_op())));
                     if panic::catch_unwind(wrapped).is_err() {
                         test_reporter.fail();
                         return;
                     }
                 } else {
-                    bench_fn(Instrumentation::no_op());
+                    bench_fn(Capture::no_op());
                 }
                 test_reporter.ok();
             }
@@ -276,11 +275,13 @@ enum BencherInner {
     Cachegrind(CachegrindOptions),
 }
 
+/// Benchmarking manage, providing ability to define benchmarks.
 #[derive(Debug)]
 pub struct Bencher {
     inner: BencherInner,
 }
 
+/// Parses configuration options from the environment.
 impl Default for Bencher {
     fn default() -> Self {
         let inner = match Options::new() {
@@ -292,6 +293,7 @@ impl Default for Bencher {
 }
 
 impl Bencher {
+    #[doc(hidden)]
     pub fn with_processor(mut self, processor: impl BenchmarkProcessor) -> Self {
         if let BencherInner::Main(bencher) = &mut self.inner {
             bencher.processor = Arc::new(processor);
@@ -299,30 +301,32 @@ impl Bencher {
         self
     }
 
+    /// Benchmarks a single function. Dropping the output won't be included into the captured stats.
     #[track_caller]
     pub fn bench<T>(
         &mut self,
         id: impl Into<BenchmarkId>,
         mut bench_fn: impl FnMut() -> T,
     ) -> &mut Self {
-        self.bench_inner(id.into(), move |instrumentation| {
-            instrumentation.start();
-            bench_fn()
+        self.bench_inner(id.into(), move |capture| {
+            capture.measure(&mut bench_fn); // dropping the output is not included into capture
         });
         self
     }
 
+    /// Benchmarks a function with configurable capture interval. This allows set up before starting the capture
+    /// and/or post-processing (e.g., assertions) after the capture.
     #[track_caller]
-    pub fn bench_with_setup<T>(
+    pub fn bench_with_capture(
         &mut self,
         id: impl Into<BenchmarkId>,
-        bench_fn: impl FnMut(Instrumentation) -> T,
+        bench_fn: impl FnMut(Capture),
     ) -> &mut Self {
         self.bench_inner(id.into(), bench_fn);
         self
     }
 
-    fn bench_inner<T>(&mut self, id: BenchmarkId, bench_fn: impl FnMut(Instrumentation) -> T) {
+    fn bench_inner(&mut self, id: BenchmarkId, bench_fn: impl FnMut(Capture)) {
         match &mut self.inner {
             BencherInner::Main(bencher) => {
                 bencher.bench(id, bench_fn);

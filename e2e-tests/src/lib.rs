@@ -34,16 +34,21 @@ pub fn main() {
         bencher.bench(id, || fibonacci(black_box(n)));
     }
 
-    bencher.bench_with_setup("fib_setup", |instr| {
+    bencher.bench_with_capture("fib_setup", |capture| {
         black_box(fibonacci(black_box(30)));
-        instr.start();
-        fibonacci(black_box(20))
+        capture.measure(|| fibonacci(black_box(20)));
     });
 
     // Dropping the guard should not be measured
     bencher.bench("fib_guard", || {
         fibonacci(black_box(10));
         FibGuard(20)
+    });
+    bencher.bench_with_capture("fib_guard_explicit", |capture| {
+        capture.measure(|| {
+            fibonacci(black_box(10));
+            FibGuard(20)
+        });
     });
 
     let mut rng = SmallRng::seed_from_u64(RNG_SEED);

@@ -290,7 +290,7 @@ impl From<CachegrindSummary> for AccessSummary {
 }
 
 pub(crate) fn run_instrumented<T>(
-    mut bench: impl FnMut(Instrumentation) -> T,
+    mut bench: impl FnMut(Capture) -> T,
     iterations: u64,
     is_baseline: bool,
 ) {
@@ -300,8 +300,12 @@ pub(crate) fn run_instrumented<T>(
     crabgrind::cachegrind::start_instrumentation();
 
     for i in 1..=iterations {
-        let instrumentation = Instrumentation {
-            terminate: is_baseline && i == iterations,
+        let instrumentation = Capture {
+            behavior: crate::black_box(match (i == iterations, is_baseline) {
+                (false, _) => CaptureBehavior::NoOp,
+                (true, true) => CaptureBehavior::TerminateOnStart,
+                (true, false) => CaptureBehavior::TerminateOnEnd,
+            }),
         };
         outputs.push(crate::black_box(bench(instrumentation)));
     }
@@ -313,17 +317,55 @@ pub(crate) fn run_instrumented<T>(
 }
 
 #[derive(Debug)]
+enum CaptureBehavior {
+    NoOp,
+    TerminateOnStart,
+    TerminateOnEnd,
+}
+
+/// Manages capturing benchmarking stats.
+#[derive(Debug)]
 #[must_use = "should be `start`ed"]
-pub struct Instrumentation {
+pub struct Capture {
+    behavior: CaptureBehavior,
+}
+
+impl Capture {
+    pub(crate) const fn no_op() -> Self {
+        Self {
+            behavior: CaptureBehavior::NoOp,
+        }
+    }
+
+    /// Starts capturing stats.
+    pub fn start(self) -> CaptureGuard {
+        match crate::black_box(self.behavior) {
+            CaptureBehavior::NoOp => CaptureGuard { terminate: false },
+            CaptureBehavior::TerminateOnStart => {
+                #[cfg(feature = "instrumentation")]
+                crabgrind::cachegrind::stop_instrumentation();
+                process::exit(0);
+            }
+            CaptureBehavior::TerminateOnEnd => CaptureGuard { terminate: true },
+        }
+    }
+
+    #[inline]
+    pub fn measure<T>(self, action: impl FnOnce() -> T) -> T {
+        let _guard = self.start();
+        action()
+    }
+}
+
+/// Guard returned by [`Capture::start()`]. When it is dropped, capturing stops.
+#[must_use = "will stop capturing stats on drop"]
+#[derive(Debug)]
+pub struct CaptureGuard {
     terminate: bool,
 }
 
-impl Instrumentation {
-    pub(crate) const fn no_op() -> Self {
-        Self { terminate: false }
-    }
-
-    pub fn start(self) {
+impl Drop for CaptureGuard {
+    fn drop(&mut self) {
         if crate::black_box(self.terminate) {
             #[cfg(feature = "instrumentation")]
             crabgrind::cachegrind::stop_instrumentation();

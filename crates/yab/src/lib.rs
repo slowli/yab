@@ -2,7 +2,7 @@ pub use std::hint::black_box;
 
 pub use crate::{
     bencher::Bencher,
-    cachegrind::{AccessSummary, CachegrindSummary, Instrumentation},
+    cachegrind::{AccessSummary, CachegrindSummary, Capture, CaptureGuard},
     id::BenchmarkId,
     output::{BenchmarkOutput, BenchmarkProcessor},
 };
