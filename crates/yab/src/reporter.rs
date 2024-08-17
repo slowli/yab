@@ -1,64 +1,49 @@
 use std::{
     cmp::Ordering,
     fmt, io,
-    io::{IsTerminal, Write},
-    ops,
-    sync::{Arc, Mutex},
+    io::IsTerminal,
+    ops::DerefMut,
+    sync::{Arc, Mutex, PoisonError},
     time::Instant,
 };
 
-use anes::{Attribute, ClearLine, Color, ResetAttributes, SetAttribute, SetForegroundColor};
+use anes::{Attribute, Color, ResetAttributes, SetAttribute, SetForegroundColor};
 
 use crate::{
     cachegrind::{AccessSummary, CachegrindSummary},
     BenchmarkId,
 };
 
-#[derive(Debug, Clone, Default)]
-pub(crate) struct Reporter(Arc<Mutex<ReporterInner>>);
+#[derive(Debug, Default)]
+struct LinePrinter;
 
-#[derive(Debug)]
-pub(crate) struct ReporterInner {
-    overwrite: bool,
-    styling: bool,
-    has_overwritable_line: bool,
+impl LinePrinter {
+    fn println(&mut self, line: &str) {
+        eprintln!("{line}");
+    }
 }
 
-impl Default for ReporterInner {
+#[derive(Debug, Clone)]
+pub(crate) struct Reporter {
+    styling: bool,
+    line_printer: Arc<Mutex<LinePrinter>>,
+}
+
+impl Default for Reporter {
     fn default() -> Self {
         Self {
-            overwrite: false, // io::stderr().is_terminal(),
             styling: io::stderr().is_terminal(),
-            has_overwritable_line: false,
+            line_printer: Arc::default(),
         }
     }
 }
 
-impl ReporterInner {
-    #[allow(dead_code)] // FIXME
-    fn print_overwritable(&mut self, message: &str) {
-        if self.overwrite {
-            eprint!("{message}");
-            io::stderr().flush().ok();
-            self.has_overwritable_line = true;
-        } else {
-            eprintln!("{message}");
-        }
-    }
-
-    #[allow(dead_code)] // FIXME
-    fn overwrite_line(&mut self) {
-        if self.overwrite && self.has_overwritable_line {
-            self.has_overwritable_line = false;
-            eprint!("\r{}", ClearLine::All);
-        }
-    }
-
-    fn println(&mut self, message: &str) {
-        if self.overwrite && self.has_overwritable_line {
-            eprintln!(); // "finalize" the overwritable line
-        }
-        eprintln!("{message}");
+impl Reporter {
+    fn lock(&self) -> impl DerefMut<Target = LinePrinter> + '_ {
+        // since printer doesn't have state, it cannot be poisoned
+        self.line_printer
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     fn with_color(&self, message: String, color: Color) -> String {
@@ -127,15 +112,9 @@ impl ReporterInner {
             Ordering::Equal => "    (no change)".to_owned(),
         }
     }
-}
-
-impl Reporter {
-    fn lock(&self) -> impl ops::DerefMut<Target = ReporterInner> + '_ {
-        self.0.lock().unwrap()
-    }
 
     pub fn report_test(&self, id: &BenchmarkId) -> TestReporter<'_> {
-        let test_id = self.lock().format_id(id);
+        let test_id = self.format_id(id);
         TestReporter {
             parent: self,
             test_id,
@@ -144,7 +123,7 @@ impl Reporter {
     }
 
     pub fn report_bench(&self, id: &BenchmarkId) -> BenchReporter<'_> {
-        let bench_id = self.lock().format_id(id);
+        let bench_id = self.format_id(id);
         BenchReporter {
             parent: self,
             bench_id,
@@ -153,7 +132,7 @@ impl Reporter {
     }
 
     pub fn report_bench_result(&self, id: &BenchmarkId) -> BenchReporter<'_> {
-        let bench_id = self.lock().format_id(id);
+        let bench_id = self.format_id(id);
         BenchReporter {
             parent: self,
             bench_id,
@@ -166,15 +145,13 @@ impl Reporter {
     }
 
     pub fn report_fatal_error(&self, err: &dyn fmt::Display) {
-        let mut inner = self.lock();
-        let fatal = inner.with_color(inner.bold("FATAL:".into()), Color::Red);
-        inner.println(&format!("{fatal} {err}"));
+        let fatal = self.with_color(self.bold("FATAL:".into()), Color::Red);
+        self.lock().println(&format!("{fatal} {err}"));
     }
 
     pub fn report_warning(&self, err: &dyn fmt::Display) {
-        let mut inner = self.lock();
-        let warn = inner.with_color(inner.bold("WARN:".into()), Color::Yellow);
-        inner.println(&format!("{warn} {err}"));
+        let warn = self.with_color(self.bold("WARN:".into()), Color::Yellow);
+        self.lock().println(&format!("{warn} {err}"));
     }
 }
 
@@ -212,9 +189,10 @@ pub(crate) struct BenchReporter<'a> {
 impl BenchReporter<'_> {
     pub fn no_data(self) {
         let id = &self.bench_id;
-        let mut inner = self.parent.lock();
-        let no_data = inner.bold("no data".into());
-        inner.println(&format!("Benchmarking {id}: {no_data}"));
+        let no_data = self.parent.bold("no data".into());
+        self.parent
+            .lock()
+            .println(&format!("Benchmarking {id}: {no_data}"));
     }
 
     pub fn baseline(&self, summary: &CachegrindSummary) {
@@ -226,56 +204,65 @@ impl BenchReporter<'_> {
     }
 
     pub fn ok(self, summary: CachegrindSummary, old_summary: Option<CachegrindSummary>) {
-        let mut inner = self.parent.lock();
+        let mut printer = self.parent.lock();
         let id = &self.bench_id;
-        let ok = inner.bold("OK".into());
+        let ok = self.parent.bold("OK".into());
         let latency = if let Some(started_at) = self.started_at {
             let latency = started_at.elapsed();
-            inner.dimmed(format!(" ({latency:?})"))
+            self.parent.dimmed(format!(" ({latency:?})"))
         } else {
             String::new()
         };
-        inner.println(&format!("Benchmarking {id}: {ok}{latency}"));
+        printer.println(&format!("Benchmarking {id}: {ok}{latency}"));
 
         let access_summary: AccessSummary = summary.into();
         let old_access_summary = old_summary.map(AccessSummary::from);
 
         let diff = old_access_summary
-            .map(|old| inner.report_diff(access_summary.instructions, old.instructions))
+            .map(|old| {
+                self.parent
+                    .report_diff(access_summary.instructions, old.instructions)
+            })
             .unwrap_or_default();
-        inner.println(&format!(
+        printer.println(&format!(
             "  Instructions: {:>15} {diff}",
             access_summary.instructions
         ));
 
         let diff = old_access_summary
-            .map(|old| inner.report_diff(access_summary.l1_hits, old.l1_hits))
+            .map(|old| self.parent.report_diff(access_summary.l1_hits, old.l1_hits))
             .unwrap_or_default();
-        inner.println(&format!(
+        printer.println(&format!(
             "  L1 hits     : {:>15} {diff}",
             access_summary.l1_hits
         ));
 
         let diff = old_access_summary
-            .map(|old| inner.report_diff(access_summary.l3_hits, old.l3_hits))
+            .map(|old| self.parent.report_diff(access_summary.l3_hits, old.l3_hits))
             .unwrap_or_default();
-        inner.println(&format!(
+        printer.println(&format!(
             "  L2/L3 hits  : {:>15} {diff}",
             access_summary.l3_hits
         ));
 
         let diff = old_access_summary
-            .map(|old| inner.report_diff(access_summary.ram_accesses, old.ram_accesses))
+            .map(|old| {
+                self.parent
+                    .report_diff(access_summary.ram_accesses, old.ram_accesses)
+            })
             .unwrap_or_default();
-        inner.println(&format!(
+        printer.println(&format!(
             "  RAM accesses: {:>15} {diff}",
             access_summary.ram_accesses
         ));
 
         let diff = old_access_summary
-            .map(|old| inner.report_diff(access_summary.estimated_cycles(), old.estimated_cycles()))
+            .map(|old| {
+                self.parent
+                    .report_diff(access_summary.estimated_cycles(), old.estimated_cycles())
+            })
             .unwrap_or_default();
-        inner.println(&format!(
+        printer.println(&format!(
             "  Est. cycles : {:>15} {diff}",
             access_summary.estimated_cycles()
         ));
