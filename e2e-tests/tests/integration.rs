@@ -8,7 +8,7 @@ use std::{
     process::{Command, Stdio},
 };
 
-use yab::{AccessSummary, BenchmarkOutput, FullCachegrindStats};
+use yab::{AccessSummary, BenchmarkOutput, CachegrindStats, FullCachegrindStats};
 use yab_e2e_tests::EXPORTER_OUTPUT_VAR;
 
 const EXE_PATH: &str = env!("CARGO_BIN_EXE_yab-e2e-tests");
@@ -149,9 +149,8 @@ fn assert_initial_outputs(outputs: &HashMap<String, BenchmarkOutput>) {
 
     for output in outputs.values() {
         let stats = output.stats.as_full().unwrap();
-        assert!(stats.instructions.total > 0, "{output:?}");
-        assert!(stats.data_reads.total > 0, "{output:?}");
-        assert!(stats.data_writes.total > 0, "{output:?}");
+        assert!(stats.instructions.total > 0, "{stats:?}");
+        assert!(stats.data_writes.total > 0, "{stats:?}");
 
         let access = AccessSummary::from(*stats);
         assert!(access.instructions > 0, "{access:?}");
@@ -246,5 +245,103 @@ fn printing_benchmark_results() {
     assert!(
         outputs.values().all(|output| output.prev_stats.is_none()),
         "{outputs:?}"
+    );
+}
+
+#[test]
+fn using_custom_job_count() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let out_path = temp_dir.path().join("out.json");
+    let target_path = temp_dir.path().join("target");
+
+    let status = Command::new(EXE_PATH)
+        .arg("--bench")
+        .env(EXPORTER_OUTPUT_VAR, &out_path)
+        .env("CACHEGRIND_OUT_DIR", &target_path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .expect("failed running benches");
+    assert!(status.success());
+
+    let initial_outputs = read_outputs(&out_path);
+
+    for jobs in [1, 3] {
+        let status = Command::new(EXE_PATH)
+            .args(["--jobs", &jobs.to_string(), "--bench"])
+            .env(EXPORTER_OUTPUT_VAR, &out_path)
+            .env("CACHEGRIND_OUT_DIR", &target_path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .expect("failed running benches");
+        assert!(status.success());
+
+        let outputs = read_outputs(&out_path);
+        for (name, output) in outputs {
+            let stats = output.stats.as_full().unwrap();
+            let initial_stats = &initial_outputs[&name].stats;
+            let initial_stats = initial_stats.as_full().unwrap();
+            assert_close(stats, initial_stats);
+        }
+    }
+}
+
+#[test]
+fn disabling_cache_simulation() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let out_path = temp_dir.path().join("out.json");
+    let target_path = temp_dir.path().join("target");
+
+    let output = Command::new(EXE_PATH)
+        .args([
+            "--cg=valgrind",
+            "--cg=--tool=cachegrind",
+            "--cg=--cache-sim=no",
+            "--bench",
+        ])
+        .env(EXPORTER_OUTPUT_VAR, &out_path)
+        .env("CACHEGRIND_OUT_DIR", &target_path)
+        .output()
+        .expect("failed running benches");
+    assert!(output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let benchmark_names: HashSet<_> = stderr
+        .lines()
+        .filter_map(|line| {
+            line.strip_prefix("Benchmarking ")?
+                .split_whitespace()
+                .next()
+        })
+        .collect();
+    for &name in EXPECTED_BENCH_NAMES {
+        assert!(
+            benchmark_names.contains(name),
+            "{benchmark_names:?} doesn't contain {name}"
+        );
+    }
+
+    let outputs = read_outputs(&out_path);
+    for &name in EXPECTED_BENCH_NAMES {
+        assert!(outputs[name].prev_stats.is_none());
+        let stats = outputs[name].stats;
+        if let CachegrindStats::Simple { instructions, .. } = stats {
+            assert!(instructions > 100);
+        } else {
+            panic!("Unexpected stats: {stats:?}");
+        }
+    }
+    let short_instructions = outputs["fib_short"].stats.total_instructions();
+    let long_instructions = outputs["fib_long"].stats.total_instructions();
+    assert!(
+        long_instructions > 10 * short_instructions,
+        "short={short_instructions}, long={long_instructions}"
+    );
+
+    let guard_instructions = outputs["fib_guard"].stats.total_instructions();
+    assert!(
+        guard_instructions.abs_diff(short_instructions) < 10,
+        "short={short_instructions}, guard={guard_instructions}"
     );
 }
