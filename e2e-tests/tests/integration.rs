@@ -150,6 +150,7 @@ fn assert_initial_outputs(outputs: &HashMap<String, BenchmarkOutput>) {
     for output in outputs.values() {
         let stats = output.stats.as_full().unwrap();
         assert!(stats.instructions.total > 0, "{stats:?}");
+        assert!(stats.data_reads.total > 0, "{stats:?}");
         assert!(stats.data_writes.total > 0, "{stats:?}");
 
         let access = AccessSummary::from(*stats);
