@@ -99,7 +99,7 @@ pub(crate) struct SpawnArgs<'a> {
     pub is_baseline: bool,
 }
 
-pub(crate) fn spawn_instrumented(args: SpawnArgs) -> Result<CachegrindSummary, CachegrindError> {
+pub(crate) fn spawn_instrumented(args: SpawnArgs) -> Result<CachegrindStats, CachegrindError> {
     let SpawnArgs {
         mut command,
         out_path,
@@ -141,16 +141,20 @@ pub(crate) fn spawn_instrumented(args: SpawnArgs) -> Result<CachegrindSummary, C
         out_path: out_path.to_owned(),
         error,
     })?;
-    CachegrindSummary::read(io::BufReader::new(out))
+    CachegrindStats::read(io::BufReader::new(out))
         .map_err(|err| err.generalize(out_path.to_owned()))
 }
 
+/// Information about a particular type of operations (instruction reads, data reads / writes).
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
 pub struct CachegrindDataPoint {
+    /// Total number of operations performed.
     pub total: u64,
+    /// Number of operations that have missed L1 cache.
     pub l1_misses: u64,
+    /// Number of operations that have missed L2/L3 caches.
     pub l3_misses: u64,
 }
 
@@ -166,16 +170,21 @@ impl ops::Sub for CachegrindDataPoint {
     }
 }
 
+/// Raw summary output produced by `cachegrind`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
-pub struct CachegrindSummary {
+pub struct CachegrindStats {
+    /// Instruction-related statistics.
     pub instructions: CachegrindDataPoint,
+    /// Statistics related to data reads.
     pub data_reads: CachegrindDataPoint,
+    /// Statistics related to data writes.
     pub data_writes: CachegrindDataPoint,
 }
 
-impl ops::Sub for CachegrindSummary {
+/// Uses saturated subtraction for all primitive `u64` values.
+impl ops::Sub for CachegrindStats {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
@@ -187,7 +196,7 @@ impl ops::Sub for CachegrindSummary {
     }
 }
 
-impl CachegrindSummary {
+impl CachegrindStats {
     pub(crate) fn new(file: fs::File, path: &str) -> Result<Self, CachegrindError> {
         let reader = io::BufReader::new(file);
         Self::read(reader).map_err(|err| err.generalize(path.to_owned()))
@@ -252,24 +261,31 @@ impl CachegrindSummary {
     }
 }
 
+/// High-level memory access stats summarized from [`CachegrindStats`].
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
 pub struct AccessSummary {
+    /// Total number of instructions executed.
     pub instructions: u64,
+    /// Total number of L1 cache hits (including instruction reads, data reads and data writes).
     pub l1_hits: u64,
+    /// Total number of L2 / L3 cache hits (including instruction reads, data reads and data writes).
     pub l3_hits: u64,
+    /// Total number of RAM accesses.
     pub ram_accesses: u64,
 }
 
 impl AccessSummary {
+    /// Returns the estimated number of CPU cycles using Itamar Turner-Trauring's [formula].
+    ///
+    /// [formula]: https://pythonspeed.com/articles/consistent-benchmarking-in-ci/
     pub fn estimated_cycles(&self) -> u64 {
-        // Uses Itamar Turner-Trauring's formula from https://pythonspeed.com/articles/consistent-benchmarking-in-ci/
         self.l1_hits + 5 * self.l3_hits + 35 * self.ram_accesses
     }
 }
 
-impl From<CachegrindSummary> for AccessSummary {
-    fn from(summary: CachegrindSummary) -> Self {
+impl From<CachegrindStats> for AccessSummary {
+    fn from(summary: CachegrindStats) -> Self {
         let ram_accesses = summary.instructions.l3_misses
             + summary.data_reads.l3_misses
             + summary.data_writes.l3_misses;
@@ -294,7 +310,7 @@ pub(crate) fn run_instrumented<T>(
     iterations: u64,
     is_baseline: bool,
 ) {
-    let mut outputs = Vec::with_capacity(iterations as usize);
+    let mut outputs = Vec::with_capacity(usize::try_from(iterations).expect("too many iterations"));
 
     #[cfg(feature = "instrumentation")]
     crabgrind::cachegrind::start_instrumentation();
@@ -323,7 +339,8 @@ enum CaptureBehavior {
     TerminateOnEnd,
 }
 
-/// Manages capturing benchmarking stats.
+/// Manager of capturing benchmarking stats provided to closures in
+/// [`Bencher::bench_with_capture()`](crate::Bencher::bench_with_capture()).
 #[derive(Debug)]
 #[must_use = "should be `start`ed"]
 pub struct Capture {
@@ -350,10 +367,12 @@ impl Capture {
         }
     }
 
+    /// Captures stats inside the provided closure (**not** including dropping its output).
+    /// The output is wrapped in a [`black_box`](crate::black_box).
     #[inline]
     pub fn measure<T>(self, action: impl FnOnce() -> T) -> T {
         let _guard = self.start();
-        action()
+        crate::black_box(action())
     }
 }
 

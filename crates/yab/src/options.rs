@@ -18,6 +18,7 @@ const DEFAULT_CACHEGRIND_WRAPPER: &[&str] = &[
     "--cachegrind-out-file={OUT}",
 ];
 
+#[allow(clippy::struct_excessive_bools)] // fine for command-line args
 #[derive(Debug, Clone, Parser)]
 pub(crate) struct BenchOptions {
     /// Whether to run benchmarks as opposed to tests.

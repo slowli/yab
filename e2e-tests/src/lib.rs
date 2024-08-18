@@ -1,3 +1,8 @@
+// Linter settings.
+#![warn(missing_debug_implementations, bare_trait_objects)]
+#![warn(clippy::all, clippy::pedantic)]
+#![allow(clippy::must_use_candidate, clippy::module_name_repetitions)]
+
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use yab::{black_box, Bencher, BenchmarkId};
 
@@ -10,8 +15,7 @@ const RNG_SEED: u64 = 123;
 
 fn fibonacci(n: u64) -> u64 {
     match n {
-        0 => 1,
-        1 => 1,
+        0 | 1 => 1,
         n => fibonacci(n - 1) + fibonacci(n - 2),
     }
 }
@@ -25,7 +29,8 @@ impl Drop for FibGuard {
 }
 
 pub fn main() {
-    let mut bencher = Bencher::default().with_processor(BenchmarkExporter::default());
+    let mut bencher = Bencher::default();
+    bencher.set_processor(BenchmarkExporter::default());
     bencher
         .bench("fib_short", || fibonacci(black_box(10)))
         .bench("fib_long", || fibonacci(black_box(30)));

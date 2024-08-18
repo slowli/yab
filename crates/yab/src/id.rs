@@ -6,6 +6,7 @@ use std::{
     panic::Location,
 };
 
+/// Benchmark identifier.
 #[derive(Debug, Clone)]
 pub struct BenchmarkId {
     pub(crate) name: String,
@@ -63,6 +64,7 @@ impl<S: Into<String>> From<S> for BenchmarkId {
 }
 
 impl BenchmarkId {
+    /// Creates an ID consisting of the base function name, and an argument representation.
     #[track_caller]
     pub fn new(name: impl Into<String>, args: impl fmt::Display) -> Self {
         Self {

@@ -10,7 +10,7 @@ use std::{
 use anes::{Attribute, Color, ResetAttributes, SetAttribute, SetForegroundColor};
 
 use crate::{
-    cachegrind::{AccessSummary, CachegrindSummary},
+    cachegrind::{AccessSummary, CachegrindStats},
     BenchmarkId,
 };
 
@@ -18,6 +18,7 @@ use crate::{
 struct LinePrinter;
 
 impl LinePrinter {
+    #[allow(clippy::unused_self)] // intentional design choice
     fn println(&mut self, line: &str) {
         eprintln!("{line}");
     }
@@ -91,6 +92,7 @@ impl Reporter {
         format!("{name}{args}{location}")
     }
 
+    #[allow(clippy::cast_precision_loss, clippy::cast_possible_wrap)] // fine for reporting
     fn report_diff(&self, new: u64, old: u64) -> String {
         match new.cmp(&old) {
             Ordering::Less => {
@@ -140,7 +142,7 @@ impl Reporter {
         }
     }
 
-    pub fn report_list_item(&self, id: &BenchmarkId) {
+    pub fn report_list_item(id: &BenchmarkId) {
         println!("{id}: benchmark");
     }
 
@@ -195,7 +197,7 @@ impl BenchReporter<'_> {
             .println(&format!("Benchmarking {id}: {no_data}"));
     }
 
-    pub fn baseline(&self, summary: &CachegrindSummary) {
+    pub fn baseline(&self, summary: &CachegrindStats) {
         let id = &self.bench_id;
         let instr = summary.instructions.total;
         self.parent.lock().println(&format!(
@@ -203,7 +205,7 @@ impl BenchReporter<'_> {
         ));
     }
 
-    pub fn ok(self, summary: CachegrindSummary, old_summary: Option<CachegrindSummary>) {
+    pub fn ok(self, summary: CachegrindStats, old_summary: Option<CachegrindStats>) {
         let mut printer = self.parent.lock();
         let id = &self.bench_id;
         let ok = self.parent.bold("OK".into());

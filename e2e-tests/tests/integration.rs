@@ -8,7 +8,7 @@ use std::{
     process::{Command, Stdio},
 };
 
-use yab::{AccessSummary, BenchmarkOutput, CachegrindSummary};
+use yab::{AccessSummary, BenchmarkOutput, CachegrindStats};
 use yab_e2e_tests::EXPORTER_OUTPUT_VAR;
 
 const EXE_PATH: &str = env!("CARGO_BIN_EXE_yab-e2e-tests");
@@ -30,7 +30,7 @@ fn read_outputs(path: &Path) -> HashMap<String, BenchmarkOutput> {
     serde_json::from_reader(io::BufReader::new(reader)).unwrap()
 }
 
-fn assert_close(new: &CachegrindSummary, old: &CachegrindSummary) {
+fn assert_close(new: &CachegrindStats, old: &CachegrindStats) {
     const THRESHOLD: u64 = 100;
 
     let points = [
@@ -148,30 +148,30 @@ fn assert_initial_outputs(outputs: &HashMap<String, BenchmarkOutput>) {
     }
 
     for output in outputs.values() {
-        assert!(output.summary.instructions.total > 0, "{output:?}");
-        assert!(output.summary.data_reads.total > 0, "{output:?}");
-        assert!(output.summary.data_writes.total > 0, "{output:?}");
+        assert!(output.stats.instructions.total > 0, "{output:?}");
+        assert!(output.stats.data_reads.total > 0, "{output:?}");
+        assert!(output.stats.data_writes.total > 0, "{output:?}");
 
-        let access = AccessSummary::from(output.summary);
+        let access = AccessSummary::from(output.stats);
         assert!(access.instructions > 0, "{access:?}");
         assert!(access.l1_hits > 0, "{access:?}");
 
-        assert!(output.old_summary.is_none());
+        assert!(output.prev_stats.is_none());
     }
 
     let short_output = &outputs["fib_short"];
     let long_output = &outputs["fib_long"];
     assert!(
-        long_output.summary.instructions.total > 10 * short_output.summary.instructions.total,
+        long_output.stats.instructions.total > 10 * short_output.stats.instructions.total,
         "long={long_output:?}, short={short_output:?}"
     );
     let guard_output = &outputs["fib_guard"];
     assert!(
-        long_output.summary.instructions.total > 10 * guard_output.summary.instructions.total,
+        long_output.stats.instructions.total > 10 * guard_output.stats.instructions.total,
         "guard={guard_output:?}, long={long_output:?}"
     );
 
-    let long_random_walk_output = AccessSummary::from(outputs["random_walk/10000000"].summary);
+    let long_random_walk_output = AccessSummary::from(outputs["random_walk/10000000"].stats);
     assert!(long_random_walk_output.ram_accesses > 1_000);
 }
 
@@ -181,9 +181,9 @@ fn assert_new_outputs(
 ) {
     assert_eq!(outputs.len(), 1);
     let short_output = &outputs["fib_short"];
-    let expected_old_summary = old["fib_short"].summary;
-    assert_eq!(short_output.old_summary, Some(expected_old_summary));
-    assert_close(&short_output.summary, &expected_old_summary);
+    let expected_old_summary = old["fib_short"].stats;
+    assert_eq!(short_output.prev_stats, Some(expected_old_summary));
+    assert_close(&short_output.stats, &expected_old_summary);
 }
 
 #[test]
@@ -238,7 +238,7 @@ fn printing_benchmark_results() {
         "{outputs:?}"
     );
     assert!(
-        outputs.values().all(|output| output.old_summary.is_none()),
+        outputs.values().all(|output| output.prev_stats.is_none()),
         "{outputs:?}"
     );
 }

@@ -3,17 +3,22 @@ use std::fmt;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::{BenchmarkId, CachegrindSummary};
+use crate::{BenchmarkId, CachegrindStats};
 
+/// Output produced by the [`Bencher`](crate::Bencher) for a single benchmark.
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
 pub struct BenchmarkOutput {
-    pub summary: CachegrindSummary,
-    pub old_summary: Option<CachegrindSummary>,
+    /// Latest / current stats for the benchmark.
+    pub stats: CachegrindStats,
+    /// Previous stats for the benchmark.
+    pub prev_stats: Option<CachegrindStats>,
 }
 
+/// Handler for benchmarking output that allows to extend or modify benchmarking logic.
 pub trait BenchmarkProcessor: 'static + Send + Sync + fmt::Debug {
+    /// Handles output for a single benchmark. This method can be called concurrently from multiple threads.
     fn process_benchmark(&self, id: &BenchmarkId, output: BenchmarkOutput);
 }
 
