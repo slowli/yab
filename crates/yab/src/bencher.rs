@@ -264,7 +264,7 @@ enum BencherInner {
     Cachegrind(CachegrindOptions),
 }
 
-/// Benchmarking manage, providing ability to define benchmarks.
+/// Benchmarking manager providing ability to define and run benchmarks.
 ///
 /// # Examples
 ///

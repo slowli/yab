@@ -70,9 +70,9 @@ fn benchmarks(bencher: &mut Bencher) {
         .bench("fib_long", || fibonacci(black_box(30)));
     // It's possible to benchmark parametric functions as well:
     for n in [15, 20, 25] {
-     bencher.bench(
+        bencher.bench(
             BenchmarkId::new("fib", n),
-           || fibonacci(black_box(n)),
+            || fibonacci(black_box(n)),
         );
     }
     // To account for setup and/or teardown, you may use `bench_with_capture`
