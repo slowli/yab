@@ -8,10 +8,15 @@ use std::{
     process::{Command, Stdio},
 };
 
+use once_cell::sync::Lazy;
 use yab::{AccessSummary, BenchmarkOutput, CachegrindStats, FullCachegrindStats};
 use yab_e2e_tests::EXPORTER_OUTPUT_VAR;
 
 const EXE_PATH: &str = env!("CARGO_BIN_EXE_yab-e2e-tests");
+// Because benchmarked functions are simple, hopefully the snapshot won't depend much on architecture,
+// Rust compiler version etc.
+static EXPECTED_STATS: Lazy<HashMap<String, FullCachegrindStats>> =
+    Lazy::new(|| serde_json::from_str(include_str!("snapshots/all-stats.json")).unwrap());
 
 const EXPECTED_BENCH_NAMES: &[&str] = &[
     "fib_short",
@@ -30,18 +35,23 @@ fn read_outputs(path: &Path) -> HashMap<String, BenchmarkOutput> {
     serde_json::from_reader(io::BufReader::new(reader)).unwrap()
 }
 
-fn assert_close(new: &FullCachegrindStats, old: &FullCachegrindStats) {
-    const THRESHOLD: u64 = 100;
-
+fn assert_close(actual: &FullCachegrindStats, expected: &FullCachegrindStats) {
     let points = [
-        (new.instructions, old.instructions),
-        (new.data_reads, old.data_reads),
-        (new.data_writes, old.data_writes),
+        (actual.instructions, expected.instructions),
+        (actual.data_reads, expected.data_reads),
+        (actual.data_writes, expected.data_writes),
     ];
     for (new_point, old_point) in points {
-        let diff = new_point.total.abs_diff(old_point.total);
-        assert!(diff < THRESHOLD, "new={new:?}, old={old:?}");
+        assert_close_values(new_point.total, old_point.total);
+        assert_close_values(new_point.l1_misses, old_point.l1_misses);
+        assert_close_values(new_point.l3_misses, old_point.l3_misses);
     }
+}
+
+fn assert_close_values(actual: u64, expected: u64) {
+    let threshold = (expected / 20).clamp(5, 100);
+    let diff = actual.abs_diff(expected);
+    assert!(diff <= threshold, "actual={actual}, expected={expected}");
 }
 
 #[test]
@@ -176,6 +186,13 @@ fn assert_initial_outputs(outputs: &HashMap<String, BenchmarkOutput>) {
     let long_random_walk_stats = long_random_walk_stats.as_full().unwrap();
     let long_random_walk_output = AccessSummary::from(*long_random_walk_stats);
     assert!(long_random_walk_output.ram_accesses > 1_000);
+
+    if !cfg!(debug_assertions) {
+        for (name, expected_stats) in &*EXPECTED_STATS {
+            let actual_stats = outputs[name].stats.as_full().unwrap();
+            assert_close(actual_stats, expected_stats);
+        }
+    }
 }
 
 fn assert_new_outputs(
@@ -345,4 +362,12 @@ fn disabling_cache_simulation() {
         guard_instructions.abs_diff(short_instructions) < 10,
         "short={short_instructions}, guard={guard_instructions}"
     );
+
+    if !cfg!(debug_assertions) {
+        for (name, expected_stats) in &*EXPECTED_STATS {
+            let expected_instructions = expected_stats.instructions.total;
+            let actual_instructions = outputs[name].stats.total_instructions();
+            assert_close_values(actual_instructions, expected_instructions);
+        }
+    }
 }
