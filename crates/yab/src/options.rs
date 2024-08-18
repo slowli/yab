@@ -15,7 +15,6 @@ const DEFAULT_CACHEGRIND_WRAPPER: &[&str] = &[
     "--I1=32768,8,64",
     "--D1=32768,8,64",
     "--LL=8388608,16,64",
-    "--cachegrind-out-file={OUT}",
 ];
 
 #[allow(clippy::struct_excessive_bools)] // fine for command-line args
@@ -29,6 +28,7 @@ pub(crate) struct BenchOptions {
     /// `{OUT}` will be replaced with the path to the output file.
     #[arg(
         long,
+        alias = "cg",
         default_values_t = DEFAULT_CACHEGRIND_WRAPPER.iter().copied().map(str::to_owned)
     )]
     cachegrind_wrapper: Vec<String>,
@@ -100,13 +100,8 @@ impl BenchOptions {
 
     pub fn cachegrind_wrapper(&self, out_file: &str) -> Command {
         let mut command = Command::new(&self.cachegrind_wrapper[0]);
-        for arg in &self.cachegrind_wrapper[1..] {
-            if arg.contains("{OUT}") {
-                command.arg(arg.replace("{OUT}", out_file));
-            } else {
-                command.arg(arg);
-            }
-        }
+        command.args(&self.cachegrind_wrapper[1..]);
+        command.arg(format!("--cachegrind-out-file={out_file}"));
         command
     }
 }
