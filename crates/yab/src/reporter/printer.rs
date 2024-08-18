@@ -3,7 +3,9 @@
 use std::{
     any::Any,
     cmp::Ordering,
-    fmt, io,
+    fmt,
+    fmt::Display,
+    io,
     io::IsTerminal,
     ops::DerefMut,
     sync::{Arc, Mutex},
@@ -131,14 +133,20 @@ impl<W: io::Write> PrintingReporter<W> {
         }
     }
 
-    pub fn report_fatal_error(&self, err: &dyn fmt::Display) {
-        let fatal = self.with_color(self.bold("FATAL:".into()), Color::Red);
-        self.lock_printer().println(&format!("{fatal} {err}"));
+    pub(crate) fn report_error(&self, err: &dyn fmt::Display, id: Option<&str>) {
+        let error = self.with_color(self.bold("ERROR:".into()), Color::Red);
+        let maybe_id = if let Some(id) = id {
+            format!(" {id}:")
+        } else {
+            String::new()
+        };
+        self.lock_printer()
+            .println(&format!("{error}{maybe_id} {err}"));
     }
 
-    pub fn report_warning(&self, err: &dyn fmt::Display) {
+    fn report_warning(&self, err: &dyn fmt::Display, id: &str) {
         let warn = self.with_color(self.bold("WARN:".into()), Color::Yellow);
-        self.lock_printer().println(&format!("{warn} {err}"));
+        self.lock_printer().println(&format!("{warn} {id}: {err}"));
     }
 }
 
@@ -152,17 +160,21 @@ pub(crate) struct TestReporter<W> {
 impl<W: io::Write> super::TestReporter for TestReporter<W> {
     fn fail(self: Box<Self>, _: &dyn Any) {
         let id = &self.test_id;
+        let failed = self
+            .parent
+            .with_color(self.parent.bold("FAILED".into()), Color::Red);
         self.parent
             .lock_printer()
-            .println(&format!("Testing {id}: FAILED"));
+            .println(&format!("Testing {id}: {failed}"));
     }
 
     fn ok(self: Box<Self>) {
         let id = &self.test_id;
         let latency = self.started_at.elapsed();
+        let ok = self.parent.bold("OK".into());
         self.parent
             .lock_printer()
-            .println(&format!("Testing {id}: OK ({latency:?})"));
+            .println(&format!("Testing {id}: {ok} ({latency:?})"));
     }
 }
 
@@ -282,11 +294,11 @@ impl<W: io::Write + fmt::Debug + Send> super::BenchmarkReporter for BenchmarkRep
     }
 
     fn warning(&mut self, warning: &dyn fmt::Display) {
-        self.parent.report_warning(warning);
+        self.parent.report_warning(warning, &self.bench_id);
     }
 
     fn error(self: Box<Self>, error: &dyn fmt::Display) {
-        self.parent.report_fatal_error(error);
+        self.parent.report_error(error, Some(&self.bench_id));
     }
 }
 
@@ -294,6 +306,10 @@ impl<W> Reporter for PrintingReporter<W>
 where
     W: io::Write + fmt::Debug + Send + 'static,
 {
+    fn error(&mut self, error: &dyn Display) {
+        self.report_error(error, None);
+    }
+
     fn new_test(&mut self, id: &BenchmarkId) -> Box<dyn super::TestReporter> {
         Box::new(TestReporter {
             parent: self.clone(),

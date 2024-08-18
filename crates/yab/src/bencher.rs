@@ -19,22 +19,65 @@ pub(crate) enum BenchMode {
     PrintResults,
 }
 
+/// Mode-specific data.
+#[derive(Debug)]
+enum BenchModeData {
+    Test {
+        should_fail: bool,
+    },
+    Bench {
+        this_executable: String,
+        jobs_semaphore: Arc<Semaphore>,
+        jobs: Vec<JoinHandle<()>>,
+    },
+    List,
+    PrintResults,
+}
+
+impl BenchModeData {
+    fn new(options: &BenchOptions) -> Self {
+        match options.mode() {
+            BenchMode::Test => Self::Test { should_fail: false },
+            BenchMode::Bench => Self::Bench {
+                this_executable: env::args().next().expect("no executable arg"),
+                jobs_semaphore: Arc::new(Semaphore::new(options.jobs.get())),
+                jobs: vec![],
+            },
+            BenchMode::List => Self::List,
+            BenchMode::PrintResults => Self::PrintResults,
+        }
+    }
+}
+
 /// Bencher variant executing in the normal (not cachegrind-supervised) mode.
 #[derive(Debug)]
 struct MainBencher {
     options: BenchOptions,
-    mode: BenchMode,
+    mode: BenchModeData,
     reporter: SeqReporter,
-    this_executable: String,
-    jobs_semaphore: Arc<Semaphore>,
-    jobs: Vec<JoinHandle<()>>,
 }
 
 impl Drop for MainBencher {
     fn drop(&mut self) {
-        // FIXME: only wait if not panicking (+ add e2e test)
-        for job in mem::take(&mut self.jobs) {
-            job.join().expect("benchmarking failed");
+        if thread::panicking() {
+            return;
+        }
+
+        match &mut self.mode {
+            BenchModeData::Bench { jobs, .. } => {
+                for job in mem::take(jobs) {
+                    if job.join().is_err() {
+                        self.reporter
+                            .error(&"At least one of benchmarking jobs failed");
+                        break;
+                    }
+                }
+            }
+            BenchModeData::Test { should_fail } if *should_fail => {
+                self.reporter.error(&"There were test failures");
+                process::exit(1);
+            }
+            _ => { /* no special handling required */ }
         }
     }
 }
@@ -45,10 +88,10 @@ impl MainBencher {
         if !options.validate(&mut reporter) {
             process::exit(1);
         }
-        let mode = options.mode();
-        if matches!(mode, BenchMode::Bench) {
+        let mode = BenchModeData::new(&options);
+        if matches!(mode, BenchModeData::Bench { .. }) {
             if let Err(err) = cachegrind::check() {
-                reporter.report_fatal_error(&err);
+                reporter.report_error(&err, None);
                 process::exit(1);
             }
         }
@@ -56,10 +99,7 @@ impl MainBencher {
         Self {
             mode,
             reporter: SeqReporter(vec![Box::new(reporter)]),
-            this_executable: env::args().next().expect("no executable arg"),
-            jobs_semaphore: Arc::new(Semaphore::new(options.jobs.get())),
             options,
-            jobs: vec![],
         }
     }
 
@@ -68,14 +108,15 @@ impl MainBencher {
             return;
         }
 
-        match self.mode {
-            BenchMode::Test => {
-                // Run the function once w/o instrumentation.
+        match &mut self.mode {
+            BenchModeData::Test { should_fail } => {
                 let test_reporter = self.reporter.new_test(&id);
+                // Run the function once w/o instrumentation.
                 if cfg!(panic = "unwind") {
                     let wrapped = panic::AssertUnwindSafe(move || drop(bench_fn(Capture::no_op())));
                     if let Err(err) = panic::catch_unwind(wrapped) {
                         test_reporter.fail(&err);
+                        *should_fail = true;
                         return;
                     }
                 } else {
@@ -83,29 +124,36 @@ impl MainBencher {
                 }
                 test_reporter.ok();
             }
-            BenchMode::Bench => {
-                let executor = self.executor(id);
-                let jobs_semaphore = self.jobs_semaphore.clone();
-                self.jobs.push(thread::spawn(move || {
+            BenchModeData::Bench {
+                jobs_semaphore,
+                jobs,
+                this_executable,
+            } => {
+                let executor = CachegrindRunner {
+                    options: self.options.clone(),
+                    this_executable: this_executable.to_owned(),
+                    reporter: self.reporter.new_benchmark(&id),
+                    id,
+                };
+                let jobs_semaphore = jobs_semaphore.clone();
+                jobs.push(thread::spawn(move || {
                     let _permit = jobs_semaphore.acquire_owned();
                     executor.run_benchmark();
                 }));
             }
-            BenchMode::List => {
+            BenchModeData::List => {
                 PrintingReporter::report_list_item(&id);
             }
-            BenchMode::PrintResults => {
-                self.executor(id).report_benchmark_result();
+            BenchModeData::PrintResults => {
+                let executor = CachegrindRunner {
+                    options: self.options.clone(),
+                    reporter: self.reporter.new_benchmark(&id),
+                    // `this_executable` isn't used, so it's fine to set it to an empty string
+                    this_executable: String::new(),
+                    id,
+                };
+                executor.report_benchmark_result();
             }
-        }
-    }
-
-    fn executor(&mut self, id: BenchmarkId) -> CachegrindRunner {
-        CachegrindRunner {
-            options: self.options.clone(),
-            this_executable: self.this_executable.clone(),
-            events: self.reporter.new_benchmark(&id),
-            id,
         }
     }
 }
@@ -115,7 +163,7 @@ impl MainBencher {
 struct CachegrindRunner {
     options: BenchOptions,
     this_executable: String,
-    events: Box<dyn BenchmarkReporter>,
+    reporter: Box<dyn BenchmarkReporter>,
     id: BenchmarkId,
 }
 
@@ -154,7 +202,7 @@ impl CachegrindRunner {
 
         // Use `baseline_path` in case we won't run the baseline after calibration
         let command = self.options.cachegrind_wrapper(&baseline_path);
-        self.events.start_execution();
+        self.reporter.start_execution();
         let cachegrind_result = cachegrind::spawn_instrumented(SpawnArgs {
             command,
             out_path: &baseline_path,
@@ -163,7 +211,7 @@ impl CachegrindRunner {
             iterations: 2,
             is_baseline: true,
         });
-        let summary = unwrap_summary!(self.events, cachegrind_result);
+        let summary = unwrap_summary!(self.reporter, cachegrind_result);
 
         // FIXME: handle `warm_up_instructions == 0` specially
         let estimated_iterations = self.options.warm_up_instructions / summary.total_instructions();
@@ -181,9 +229,9 @@ impl CachegrindRunner {
                 iterations: estimated_iterations + 1,
                 is_baseline: true,
             });
-            unwrap_summary!(self.events, cachegrind_result)
+            unwrap_summary!(self.reporter, cachegrind_result)
         };
-        self.events.baseline_computed(&baseline);
+        self.reporter.baseline_computed(&baseline);
 
         let command = self.options.cachegrind_wrapper(&full_path);
         let cachegrind_result = cachegrind::spawn_instrumented(SpawnArgs {
@@ -194,9 +242,9 @@ impl CachegrindRunner {
             iterations: estimated_iterations + 1,
             is_baseline: false,
         });
-        let full = unwrap_summary!(self.events, cachegrind_result);
+        let full = unwrap_summary!(self.reporter, cachegrind_result);
         let stats = full - baseline;
-        self.events.ok(&BenchmarkOutput { stats, prev_stats });
+        self.reporter.ok(&BenchmarkOutput { stats, prev_stats });
     }
 
     fn report_benchmark_result(mut self) {
@@ -206,11 +254,11 @@ impl CachegrindRunner {
         );
         let full_path = format!("{}/{}.cachegrind", self.options.cachegrind_out_dir, self.id);
         let Some(baseline) = self.load_summary(&baseline_path) else {
-            self.events.warning(&"no data for benchmark");
+            self.reporter.warning(&"no data for benchmark");
             return;
         };
         let Some(full) = self.load_summary(&full_path) else {
-            self.events.warning(&"no data for benchmark");
+            self.reporter.warning(&"no data for benchmark");
             return;
         };
         let stats = full - baseline;
@@ -221,7 +269,7 @@ impl CachegrindRunner {
         let prev_stats =
             old_baseline.and_then(|baseline| Some(self.load_summary(&old_full_path)? - baseline));
 
-        self.events.ok(&BenchmarkOutput { stats, prev_stats });
+        self.reporter.ok(&BenchmarkOutput { stats, prev_stats });
     }
 
     fn load_summary(&mut self, path: &str) -> Option<CachegrindStats> {
@@ -230,7 +278,7 @@ impl CachegrindRunner {
             .and_then(|file| match CachegrindStats::new(file, path) {
                 Ok(summary) => Some(summary),
                 Err(err) => {
-                    self.events.warning(&err);
+                    self.reporter.warning(&err);
                     None
                 }
             })
@@ -242,7 +290,7 @@ impl CachegrindRunner {
             let backup_path = format!("{path}.old");
             if let Err(err) = fs::copy(path, &backup_path) {
                 let err = format!("Failed backing up cachegrind baseline `{path}`: {err}");
-                self.events.warning(&err);
+                self.reporter.warning(&err);
             }
         }
         summary

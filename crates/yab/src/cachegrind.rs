@@ -125,6 +125,7 @@ pub(crate) fn spawn_instrumented(args: SpawnArgs) -> Result<CachegrindStats, Cac
     };
     options.push_args(&mut command);
 
+    // FIXME: capture output?
     let status = command
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -133,7 +134,7 @@ pub(crate) fn spawn_instrumented(args: SpawnArgs) -> Result<CachegrindStats, Cac
     if !status.success() {
         let err = io::Error::new(
             io::ErrorKind::Other,
-            format!("Failed running cachegrind, exit code: {status}"),
+            format!("Failed running cachegrind, {status}"),
         );
         return Err(CachegrindError::Exec(err));
     }
