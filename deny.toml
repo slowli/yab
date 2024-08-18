@@ -1,0 +1,30 @@
+# `cargo-deny` configuration.
+
+[output]
+feature-depth = 1
+
+[advisories]
+db-urls = ["https://github.com/rustsec/advisory-db"]
+yanked = "deny"
+
+[licenses]
+allow = [
+  # Permissive open-source licenses
+  "MIT",
+  "Apache-2.0",
+  "Unicode-DFS-2016",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+allow-wildcard-paths = true
+skip-tree = [
+  # Old windows-sys version used by `clap`. Irrelevant because cachegrind doesn't support Windows.
+  { name = "windows-sys", version = "^0.48" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
