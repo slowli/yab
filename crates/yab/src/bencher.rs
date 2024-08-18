@@ -90,9 +90,14 @@ impl MainBencher {
         }
         let mode = BenchModeData::new(&options);
         if matches!(mode, BenchModeData::Bench { .. }) {
-            if let Err(err) = cachegrind::check() {
-                reporter.report_error(&err, None);
-                process::exit(1);
+            match cachegrind::check() {
+                Ok(version) => {
+                    reporter.report_debug(&format!("Using cachegrind with version {version}"));
+                }
+                Err(err) => {
+                    reporter.report_error(&err, None);
+                    process::exit(1);
+                }
             }
         }
 

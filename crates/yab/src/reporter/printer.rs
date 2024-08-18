@@ -3,9 +3,7 @@
 use std::{
     any::Any,
     cmp::Ordering,
-    fmt,
-    fmt::Display,
-    io,
+    fmt, io,
     io::IsTerminal,
     ops::DerefMut,
     sync::{Arc, Mutex},
@@ -17,7 +15,7 @@ use anes::{Attribute, Color, ResetAttributes, SetAttribute, SetForegroundColor};
 use super::{BenchmarkOutput, Reporter};
 use crate::{
     cachegrind::{AccessSummary, CachegrindStats},
-    BenchmarkId,
+    BenchmarkId, FullCachegrindStats,
 };
 
 #[derive(Debug)]
@@ -29,9 +27,17 @@ impl<W: io::Write> LinePrinter<W> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[allow(dead_code)] // FIXME
+pub(crate) enum Verbosity {
+    Normal,
+    Verbose,
+}
+
 #[derive(Debug)]
 pub(crate) struct PrintingReporter<W = io::Stderr> {
     styling: bool,
+    verbosity: Verbosity,
     line_printer: Arc<Mutex<LinePrinter<W>>>,
 }
 
@@ -39,6 +45,7 @@ impl<W> Clone for PrintingReporter<W> {
     fn clone(&self) -> Self {
         Self {
             styling: self.styling,
+            verbosity: self.verbosity,
             line_printer: self.line_printer.clone(),
         }
     }
@@ -49,6 +56,7 @@ impl Default for PrintingReporter {
         let line_printer = LinePrinter(io::stderr());
         Self {
             styling: io::stderr().is_terminal(),
+            verbosity: Verbosity::Verbose,
             line_printer: Arc::new(Mutex::new(line_printer)),
         }
     }
@@ -111,11 +119,13 @@ impl<W: io::Write> PrintingReporter<W> {
     }
 
     #[allow(clippy::cast_precision_loss, clippy::cast_possible_wrap)] // fine for reporting
-    fn report_diff(&self, new: u64, old: u64) -> String {
+    fn format_diff(&self, new: u64, old: u64) -> String {
+        const DIFF_WIDTH: usize = 10;
+
         match new.cmp(&old) {
             Ordering::Less => {
                 let diff = format!(
-                    "{:>+15} ({:+.2}%)",
+                    "{:>+DIFF_WIDTH$} ({:+.2}%)",
                     new as i64 - old as i64,
                     (old - new) as f32 * -100.0 / old as f32
                 );
@@ -123,14 +133,63 @@ impl<W: io::Write> PrintingReporter<W> {
             }
             Ordering::Greater => {
                 let diff = format!(
-                    "{:>+15} ({:+.2}%)",
+                    "{:>+DIFF_WIDTH$} ({:+.2}%)",
                     new - old,
                     (new - old) as f32 * 100.0 / old as f32
                 );
                 self.with_color(diff, Color::Red)
             }
-            Ordering::Equal => "    (no change)".to_owned(),
+            Ordering::Equal => String::new(),
         }
+    }
+
+    fn report_optional_diff(
+        &self,
+        printer: &mut LinePrinter<W>,
+        label: &str,
+        new: u64,
+        old: Option<u64>,
+    ) {
+        if new != 0 || old > Some(0) {
+            let diff = old
+                .map(|old| self.format_diff(new, old))
+                .unwrap_or_default();
+            printer.println(&format!("{label}: {new:>15} {diff}"));
+        }
+    }
+
+    fn report_details(
+        &self,
+        printer: &mut LinePrinter<W>,
+        new: AccessDetails,
+        old: Option<AccessDetails>,
+    ) {
+        self.report_optional_diff(
+            printer,
+            "    Instr.    ",
+            new.instructions,
+            old.map(|old| old.instructions),
+        );
+        self.report_optional_diff(
+            printer,
+            "    Data read ",
+            new.data_reads,
+            old.map(|old| old.data_reads),
+        );
+        self.report_optional_diff(
+            printer,
+            "    Data write",
+            new.data_writes,
+            old.map(|old| old.data_writes),
+        );
+    }
+
+    pub(crate) fn report_debug(&self, info: &str) {
+        if self.verbosity < Verbosity::Verbose {
+            return;
+        }
+        let trace = self.with_color(self.bold("DEBUG:".into()), Color::DarkMagenta);
+        self.lock_printer().println(&format!("{trace} {info}"));
     }
 
     pub(crate) fn report_error(&self, err: &dyn fmt::Display, id: Option<&str>) {
@@ -158,6 +217,15 @@ pub(crate) struct TestReporter<W> {
 }
 
 impl<W: io::Write> super::TestReporter for TestReporter<W> {
+    fn ok(self: Box<Self>) {
+        let id = &self.test_id;
+        let latency = self.started_at.elapsed();
+        let ok = self.parent.bold("OK".into());
+        self.parent
+            .lock_printer()
+            .println(&format!("Testing {id}: {ok} ({latency:?})"));
+    }
+
     fn fail(self: Box<Self>, _: &dyn Any) {
         let id = &self.test_id;
         let failed = self
@@ -166,15 +234,6 @@ impl<W: io::Write> super::TestReporter for TestReporter<W> {
         self.parent
             .lock_printer()
             .println(&format!("Testing {id}: {failed}"));
-    }
-
-    fn ok(self: Box<Self>) {
-        let id = &self.test_id;
-        let latency = self.started_at.elapsed();
-        let ok = self.parent.bold("OK".into());
-        self.parent
-            .lock_printer()
-            .println(&format!("Testing {id}: {ok} ({latency:?})"));
     }
 }
 
@@ -188,7 +247,7 @@ struct BenchmarkReporter<W> {
 impl<W: io::Write> BenchmarkReporter<W> {
     fn instruction_diff(&self, printer: &mut LinePrinter<W>, new: u64, old: Option<u64>) {
         let diff = old
-            .map(|old| self.parent.report_diff(new, old))
+            .map(|old| self.parent.format_diff(new, old))
             .unwrap_or_default();
         printer.println(&format!("  Instructions: {new:>15} {diff}"));
     }
@@ -196,14 +255,15 @@ impl<W: io::Write> BenchmarkReporter<W> {
     fn full_diff(
         &self,
         printer: &mut LinePrinter<W>,
-        summary: AccessSummary,
-        old_summary: Option<AccessSummary>,
+        stats: FullCachegrindStats,
+        old_stats: Option<FullCachegrindStats>,
     ) {
+        let parent = &self.parent;
+        let summary = AccessSummary::from(stats);
+        let old_summary = old_stats.map(AccessSummary::from);
+
         let diff = old_summary
-            .map(|old| {
-                self.parent
-                    .report_diff(summary.instructions, old.instructions)
-            })
+            .map(|old| parent.format_diff(summary.instructions, old.instructions))
             .unwrap_or_default();
         printer.println(&format!(
             "  Instructions: {:>15} {diff}",
@@ -211,31 +271,49 @@ impl<W: io::Write> BenchmarkReporter<W> {
         ));
 
         let diff = old_summary
-            .map(|old| self.parent.report_diff(summary.l1_hits, old.l1_hits))
+            .map(|old| parent.format_diff(summary.l1_hits, old.l1_hits))
             .unwrap_or_default();
         printer.println(&format!("  L1 hits     : {:>15} {diff}", summary.l1_hits));
 
+        if parent.verbosity >= Verbosity::Verbose {
+            parent.report_details(
+                printer,
+                stats.l1_hits(),
+                old_stats.as_ref().map(FullCachegrindStats::l1_hits),
+            );
+        }
+
         let diff = old_summary
-            .map(|old| self.parent.report_diff(summary.l3_hits, old.l3_hits))
+            .map(|old| parent.format_diff(summary.l3_hits, old.l3_hits))
             .unwrap_or_default();
         printer.println(&format!("  L2/L3 hits  : {:>15} {diff}", summary.l3_hits));
 
+        if parent.verbosity >= Verbosity::Verbose {
+            parent.report_details(
+                printer,
+                stats.l3_hits(),
+                old_stats.as_ref().map(FullCachegrindStats::l3_hits),
+            );
+        }
+
         let diff = old_summary
-            .map(|old| {
-                self.parent
-                    .report_diff(summary.ram_accesses, old.ram_accesses)
-            })
+            .map(|old| parent.format_diff(summary.ram_accesses, old.ram_accesses))
             .unwrap_or_default();
         printer.println(&format!(
             "  RAM accesses: {:>15} {diff}",
             summary.ram_accesses
         ));
 
+        if parent.verbosity >= Verbosity::Verbose {
+            parent.report_details(
+                printer,
+                stats.ram(),
+                old_stats.as_ref().map(FullCachegrindStats::ram),
+            );
+        }
+
         let diff = old_summary
-            .map(|old| {
-                self.parent
-                    .report_diff(summary.estimated_cycles(), old.estimated_cycles())
-            })
+            .map(|old| parent.format_diff(summary.estimated_cycles(), old.estimated_cycles()))
             .unwrap_or_default();
         printer.println(&format!(
             "  Est. cycles : {:>15} {diff}",
@@ -250,6 +328,10 @@ impl<W: io::Write + fmt::Debug + Send> super::BenchmarkReporter for BenchmarkRep
     }
 
     fn baseline_computed(&mut self, stats: &CachegrindStats) {
+        if self.parent.verbosity < Verbosity::Verbose {
+            return;
+        }
+
         let id = &self.bench_id;
         let instr = stats.total_instructions();
         self.parent.lock_printer().println(&format!(
@@ -286,11 +368,7 @@ impl<W: io::Write + fmt::Debug + Send> super::BenchmarkReporter for BenchmarkRep
             }
         };
 
-        self.full_diff(
-            &mut printer,
-            stats.into(),
-            prev_stats.map(AccessSummary::from),
-        );
+        self.full_diff(&mut printer, stats, prev_stats);
     }
 
     fn warning(&mut self, warning: &dyn fmt::Display) {
@@ -306,7 +384,7 @@ impl<W> Reporter for PrintingReporter<W>
 where
     W: io::Write + fmt::Debug + Send + 'static,
 {
-    fn error(&mut self, error: &dyn Display) {
+    fn error(&mut self, error: &dyn fmt::Display) {
         self.report_error(error, None);
     }
 
@@ -319,11 +397,50 @@ where
     }
 
     fn new_benchmark(&mut self, id: &BenchmarkId) -> Box<dyn super::BenchmarkReporter> {
+        let bench_id = self.format_id(id);
+        if self.verbosity >= Verbosity::Verbose {
+            self.lock_printer()
+                .println(&format!("Benchmarking {bench_id}: started"));
+        }
+
         Box::new(BenchmarkReporter {
             parent: self.clone(),
-            bench_id: self.format_id(id),
+            bench_id,
             started_at: None,
         })
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AccessDetails {
+    instructions: u64,
+    data_reads: u64,
+    data_writes: u64,
+}
+
+impl FullCachegrindStats {
+    fn l1_hits(&self) -> AccessDetails {
+        AccessDetails {
+            instructions: self.instructions.l1_hits(),
+            data_reads: self.data_reads.l1_hits(),
+            data_writes: self.data_writes.l1_hits(),
+        }
+    }
+
+    fn l3_hits(&self) -> AccessDetails {
+        AccessDetails {
+            instructions: self.instructions.l3_hits(),
+            data_reads: self.data_reads.l3_hits(),
+            data_writes: self.data_writes.l3_hits(),
+        }
+    }
+
+    fn ram(&self) -> AccessDetails {
+        AccessDetails {
+            instructions: self.instructions.l3_misses,
+            data_reads: self.data_reads.l3_misses,
+            data_writes: self.data_writes.l3_misses,
+        }
     }
 }
 
@@ -336,6 +453,7 @@ mod tests {
         let line_printer = LinePrinter(vec![]);
         PrintingReporter {
             styling: false,
+            verbosity: Verbosity::Normal,
             line_printer: Arc::new(Mutex::new(line_printer)),
         }
     }
