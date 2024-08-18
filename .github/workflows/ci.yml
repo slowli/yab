@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  # New valgrind version to install
+  valgrind: 3.23.0
+  msrv: 1.75.0
+  nightly: nightly-2024-07-07
+
+jobs:
+  build-msrv:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Check that old valgrind versions can be used w/o instrumentation
+      - name: Install valgrind
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-suggests --no-install-recommends valgrind
+          valgrind --tool=cachegrind --version
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.msrv }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-msrv-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-msrv-cargo
+
+      - name: Build libraries
+        run: cargo build -p yab --features=serde
+      - name: Run benchmarks (no features)
+        run: cargo bench --workspace
+      - name: Run tests (no features)
+        run: cargo test --release --workspace --all-targets
+
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache valgrind build dir
+        uses: actions/cache@v4
+        with:
+          path: /tmp/valgrind-${{ env.valgrind }}
+          key: ${{ runner.os }}-valgrind-${{ env.valgrind }}
+      - name: Install valgrind
+        run: VALGRIND_VER=${{ env.valgrind }} ./install-valgrind.sh
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo
+
+      - name: Format
+        run: cargo fmt --all -- --config imports_granularity=Crate --config group_imports=StdExternalCrate --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-features --all-targets -- -D warnings
+      - name: Clippy (no features)
+        run: cargo clippy -p yab --no-default-features --lib
+      - name: Clippy (serde)
+        run: cargo clippy -p yab --features=serde --lib
+
+      - name: Run benchmarks
+        run: cargo bench --workspace --all-features
+      - name: Run benchmarks (no features)
+        run: cargo bench --workspace
+
+      - name: Run tests
+        # Running end-to-end tests in the release mode makes it closer to a real environment
+        run: cargo test --release --workspace --all-features --all-targets
+      - name: Run E2E tests (no features)
+        run: cargo test --release -p yab-e2e-tests --all-targets
+      - name: Run doc tests
+        run: cargo test --workspace --all-features --doc
+
+  document:
+    if: github.event_name == 'push'
+    needs:
+      - build
+      - build-msrv
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.nightly }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-document-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-document-cargo
+
+      - name: Build docs
+        run: |
+          cargo clean --doc && cargo rustdoc -p yab --features=serde -- --cfg docsrs
+
+      - name: Deploy
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          branch: gh-pages
+          folder: target/doc
+          single-commit: true
