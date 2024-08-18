@@ -6,7 +6,7 @@ use std::{
     panic::Location,
 };
 
-/// Benchmark identifier.
+/// Benchmark identifier supplied to [`Bencher`](crate::Bencher) functions.
 #[derive(Debug, Clone)]
 pub struct BenchmarkId {
     pub(crate) name: String,

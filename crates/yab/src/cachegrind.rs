@@ -218,7 +218,7 @@ impl ops::Sub for FullCachegrindStats {
     fn sub(self, rhs: Self) -> Self::Output {
         Self {
             instructions: self.instructions - rhs.instructions,
-            data_reads: self.data_reads - rhs.data_writes,
+            data_reads: self.data_reads - rhs.data_reads,
             data_writes: self.data_writes - rhs.data_writes,
         }
     }

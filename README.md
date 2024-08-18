@@ -1,5 +1,8 @@
 # Yet Another Benchmarking framework for Rust
 
+[![Build Status](https://github.com/slowli/yab/workflows/CI/badge.svg?branch=main)](https://github.com/slowli/yab/actions)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue)](https://github.com/slowli/yab#license)
+
 YAB is **Y**et **A**nother **B**enchmarking framework powered by [`cachegrind`] from the Valgrind tool suite.
 It collects reproducible measurements of Rust code (e.g., the number of executed instructions,
 number of L1 and L2/L3 cache hits and RAM accesses), making it possible to use in CI etc.
