@@ -45,6 +45,7 @@ pub(crate) enum CachegrindError {
     },
 }
 
+#[derive(Debug)]
 enum ParseError {
     Custom(Cow<'static, str>),
     Io(io::Error),
@@ -170,11 +171,11 @@ impl ops::Sub for CachegrindDataPoint {
     }
 }
 
-/// Raw summary output produced by `cachegrind`.
+/// Full `cachegrind` stats including cache simulation.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[non_exhaustive]
-pub struct CachegrindStats {
+pub struct FullCachegrindStats {
     /// Instruction-related statistics.
     pub instructions: CachegrindDataPoint,
     /// Statistics related to data reads.
@@ -183,15 +184,74 @@ pub struct CachegrindStats {
     pub data_writes: CachegrindDataPoint,
 }
 
-/// Uses saturated subtraction for all primitive `u64` values.
-impl ops::Sub for CachegrindStats {
+impl FullCachegrindStats {
+    fn read(summary_by_event: &HashMap<&str, u64>) -> Result<Self, ParseError> {
+        Ok(Self {
+            instructions: CachegrindDataPoint {
+                total: summary_from_map(summary_by_event, "Ir")?,
+                l1_misses: summary_from_map(summary_by_event, "I1mr")?,
+                l3_misses: summary_from_map(summary_by_event, "ILmr")?,
+            },
+            data_reads: CachegrindDataPoint {
+                total: summary_from_map(summary_by_event, "Dr")?,
+                l1_misses: summary_from_map(summary_by_event, "D1mr")?,
+                l3_misses: summary_from_map(summary_by_event, "DLmr")?,
+            },
+            data_writes: CachegrindDataPoint {
+                total: summary_from_map(summary_by_event, "Dw")?,
+                l1_misses: summary_from_map(summary_by_event, "D1mw")?,
+                l3_misses: summary_from_map(summary_by_event, "DLmw")?,
+            },
+        })
+    }
+}
+
+fn summary_from_map(map: &HashMap<&str, u64>, key: &str) -> Result<u64, ParseError> {
+    map.get(key)
+        .copied()
+        .ok_or_else(|| format!("missing summary for event `{key}`").into())
+}
+
+impl ops::Sub for FullCachegrindStats {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
         Self {
             instructions: self.instructions - rhs.instructions,
-            data_reads: self.data_reads - rhs.data_reads,
+            data_reads: self.data_reads - rhs.data_writes,
             data_writes: self.data_writes - rhs.data_writes,
+        }
+    }
+}
+
+/// Raw summary output produced by `cachegrind`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(untagged))]
+#[non_exhaustive]
+pub enum CachegrindStats {
+    /// Stats produced by `cachegrind` with disabled cache simulation.
+    #[non_exhaustive]
+    Simple {
+        /// Total number of executed instructions.
+        instructions: u64,
+    },
+    /// Full stats including cache simulation.
+    Full(FullCachegrindStats),
+}
+
+/// Uses saturated subtraction for all primitive `u64` values.
+impl ops::Sub for CachegrindStats {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Self::Full(lhs), Self::Full(rhs)) => Self::Full(lhs - rhs),
+            _ => Self::Simple {
+                instructions: self
+                    .total_instructions()
+                    .saturating_sub(rhs.total_instructions()),
+            },
         }
     }
 }
@@ -235,29 +295,28 @@ impl CachegrindStats {
         }
 
         let summary_by_event: HashMap<_, _> = events.into_iter().zip(summary).collect();
-        Ok(Self {
-            instructions: CachegrindDataPoint {
-                total: Self::summary_from_map(&summary_by_event, "Ir")?,
-                l1_misses: Self::summary_from_map(&summary_by_event, "I1mr")?,
-                l3_misses: Self::summary_from_map(&summary_by_event, "ILmr")?,
-            },
-            data_reads: CachegrindDataPoint {
-                total: Self::summary_from_map(&summary_by_event, "Dr")?,
-                l1_misses: Self::summary_from_map(&summary_by_event, "D1mr")?,
-                l3_misses: Self::summary_from_map(&summary_by_event, "DLmr")?,
-            },
-            data_writes: CachegrindDataPoint {
-                total: Self::summary_from_map(&summary_by_event, "Dw")?,
-                l1_misses: Self::summary_from_map(&summary_by_event, "D1mw")?,
-                l3_misses: Self::summary_from_map(&summary_by_event, "DLmw")?,
-            },
+        Ok(if summary_by_event.len() == 1 {
+            let instructions = summary_from_map(&summary_by_event, "Ir")?;
+            Self::Simple { instructions }
+        } else {
+            Self::Full(FullCachegrindStats::read(&summary_by_event)?)
         })
     }
 
-    fn summary_from_map(map: &HashMap<&str, u64>, key: &str) -> Result<u64, ParseError> {
-        map.get(key)
-            .copied()
-            .ok_or_else(|| format!("missing summary for event `{key}`").into())
+    /// Returns full stats if they are available.
+    pub fn as_full(&self) -> Option<&FullCachegrindStats> {
+        match self {
+            Self::Full(stats) => Some(stats),
+            Self::Simple { .. } => None,
+        }
+    }
+
+    /// Gets the total number of executed instructions.
+    pub fn total_instructions(&self) -> u64 {
+        match self {
+            Self::Simple { instructions } => *instructions,
+            Self::Full(stats) => stats.instructions.total,
+        }
     }
 }
 
@@ -284,20 +343,18 @@ impl AccessSummary {
     }
 }
 
-impl From<CachegrindStats> for AccessSummary {
-    fn from(summary: CachegrindStats) -> Self {
-        let ram_accesses = summary.instructions.l3_misses
-            + summary.data_reads.l3_misses
-            + summary.data_writes.l3_misses;
-        let at_least_l3_hits = summary.instructions.l1_misses
-            + summary.data_reads.l1_misses
-            + summary.data_writes.l1_misses;
+impl From<FullCachegrindStats> for AccessSummary {
+    fn from(stats: FullCachegrindStats) -> Self {
+        let ram_accesses =
+            stats.instructions.l3_misses + stats.data_reads.l3_misses + stats.data_writes.l3_misses;
+        let at_least_l3_hits =
+            stats.instructions.l1_misses + stats.data_reads.l1_misses + stats.data_writes.l1_misses;
         let l3_hits = at_least_l3_hits - ram_accesses;
         let total_accesses =
-            summary.instructions.total + summary.data_reads.total + summary.data_writes.total;
+            stats.instructions.total + stats.data_reads.total + stats.data_writes.total;
         let l1_hits = total_accesses - at_least_l3_hits;
         Self {
-            instructions: summary.instructions.total,
+            instructions: stats.instructions.total,
             l1_hits,
             l3_hits,
             ram_accesses,
@@ -390,5 +447,85 @@ impl Drop for CaptureGuard {
             crabgrind::cachegrind::stop_instrumentation();
             process::exit(0);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert_matches::assert_matches;
+
+    use super::*;
+
+    #[test]
+    fn parsing_basic_cachegrind_output() {
+        let output = "\
+            events: Ir\n\
+            summary: 1234";
+        let stats = CachegrindStats::read(output.as_bytes()).unwrap();
+        assert_matches!(
+            stats,
+            CachegrindStats::Simple { instructions } if instructions == 1_234
+        );
+    }
+
+    #[test]
+    fn parsing_full_cachegrind_output() {
+        let output = "\
+            events: Ir I1mr ILmr Dr D1mr DLmr Dw D1mw DLmw \n\
+            fn=(below main)\n\
+            29 9 1 1 1 0 0 5 0 0\n\
+            44 3 1 1 0 0 0 1 0 0\n\
+            summary: 662469 1899 1843 143129 3638 2694 89043 1330 1210\n
+        ";
+        let stats = CachegrindStats::read(output.as_bytes()).unwrap();
+        let stats = stats.as_full().unwrap();
+        assert_full_stats(stats);
+    }
+
+    fn assert_full_stats(stats: &FullCachegrindStats) {
+        assert_eq!(stats.instructions.total, 662_469);
+        assert_eq!(stats.instructions.l1_misses, 1_899);
+        assert_eq!(stats.instructions.l3_misses, 1_843);
+        assert_eq!(stats.data_reads.total, 143_129);
+        assert_eq!(stats.data_reads.l1_misses, 3_638);
+        assert_eq!(stats.data_reads.l3_misses, 2_694);
+        assert_eq!(stats.data_writes.total, 89_043);
+        assert_eq!(stats.data_writes.l1_misses, 1_330);
+        assert_eq!(stats.data_writes.l3_misses, 1_210);
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serializing_stats() {
+        let json = serde_json::json!({
+            "instructions": 1_234,
+        });
+        let stats: CachegrindStats = serde_json::from_value(json.clone()).unwrap();
+        assert_matches!(
+            stats,
+            CachegrindStats::Simple { instructions } if instructions == 1_234
+        );
+        assert_eq!(serde_json::to_value(stats).unwrap(), json);
+
+        let json = serde_json::json!({
+            "instructions": {
+                "total": 662_469,
+                "l1_misses": 1_899,
+                "l3_misses": 1_843,
+            },
+            "data_reads": {
+                "total": 143_129,
+                "l1_misses": 3_638,
+                "l3_misses": 2_694,
+            },
+            "data_writes": {
+                "total": 89_043,
+                "l1_misses": 1_330,
+                "l3_misses": 1_210,
+            },
+        });
+        let stats: CachegrindStats = serde_json::from_value(json.clone()).unwrap();
+        assert_full_stats(stats.as_full().unwrap());
+        assert_eq!(serde_json::to_value(stats).unwrap(), json);
     }
 }

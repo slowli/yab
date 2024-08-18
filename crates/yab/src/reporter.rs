@@ -199,13 +199,13 @@ impl BenchReporter<'_> {
 
     pub fn baseline(&self, summary: &CachegrindStats) {
         let id = &self.bench_id;
-        let instr = summary.instructions.total;
+        let instr = summary.total_instructions();
         self.parent.lock().println(&format!(
             "Benchmarking {id}: captured baseline ({instr} instructions)"
         ));
     }
 
-    pub fn ok(self, summary: CachegrindStats, old_summary: Option<CachegrindStats>) {
+    pub fn ok(self, stats: CachegrindStats, old_stats: Option<CachegrindStats>) {
         let mut printer = self.parent.lock();
         let id = &self.bench_id;
         let ok = self.parent.bold("OK".into());
@@ -217,56 +217,83 @@ impl BenchReporter<'_> {
         };
         printer.println(&format!("Benchmarking {id}: {ok}{latency}"));
 
-        let access_summary: AccessSummary = summary.into();
-        let old_access_summary = old_summary.map(AccessSummary::from);
+        let (stats, old_stats) = match (stats, old_stats) {
+            (CachegrindStats::Simple { instructions }, _) => {
+                let old_instructions = old_stats.as_ref().map(CachegrindStats::total_instructions);
+                self.instruction_diff(&mut printer, instructions, old_instructions);
+                return;
+            }
+            (_, Some(CachegrindStats::Simple { instructions: old })) => {
+                self.instruction_diff(&mut printer, stats.total_instructions(), Some(old));
+                return;
+            }
+            (CachegrindStats::Full(stats), None) => (stats, None),
+            (CachegrindStats::Full(stats), Some(CachegrindStats::Full(old_stats))) => {
+                (stats, Some(old_stats))
+            }
+        };
 
-        let diff = old_access_summary
+        self.full_diff(
+            &mut printer,
+            stats.into(),
+            old_stats.map(AccessSummary::from),
+        );
+    }
+
+    fn instruction_diff(&self, printer: &mut LinePrinter, new: u64, old: Option<u64>) {
+        let diff = old
+            .map(|old| self.parent.report_diff(new, old))
+            .unwrap_or_default();
+        printer.println(&format!("  Instructions: {new:>15} {diff}"));
+    }
+
+    fn full_diff(
+        &self,
+        printer: &mut LinePrinter,
+        summary: AccessSummary,
+        old_summary: Option<AccessSummary>,
+    ) {
+        let diff = old_summary
             .map(|old| {
                 self.parent
-                    .report_diff(access_summary.instructions, old.instructions)
+                    .report_diff(summary.instructions, old.instructions)
             })
             .unwrap_or_default();
         printer.println(&format!(
             "  Instructions: {:>15} {diff}",
-            access_summary.instructions
+            summary.instructions
         ));
 
-        let diff = old_access_summary
-            .map(|old| self.parent.report_diff(access_summary.l1_hits, old.l1_hits))
+        let diff = old_summary
+            .map(|old| self.parent.report_diff(summary.l1_hits, old.l1_hits))
             .unwrap_or_default();
-        printer.println(&format!(
-            "  L1 hits     : {:>15} {diff}",
-            access_summary.l1_hits
-        ));
+        printer.println(&format!("  L1 hits     : {:>15} {diff}", summary.l1_hits));
 
-        let diff = old_access_summary
-            .map(|old| self.parent.report_diff(access_summary.l3_hits, old.l3_hits))
+        let diff = old_summary
+            .map(|old| self.parent.report_diff(summary.l3_hits, old.l3_hits))
             .unwrap_or_default();
-        printer.println(&format!(
-            "  L2/L3 hits  : {:>15} {diff}",
-            access_summary.l3_hits
-        ));
+        printer.println(&format!("  L2/L3 hits  : {:>15} {diff}", summary.l3_hits));
 
-        let diff = old_access_summary
+        let diff = old_summary
             .map(|old| {
                 self.parent
-                    .report_diff(access_summary.ram_accesses, old.ram_accesses)
+                    .report_diff(summary.ram_accesses, old.ram_accesses)
             })
             .unwrap_or_default();
         printer.println(&format!(
             "  RAM accesses: {:>15} {diff}",
-            access_summary.ram_accesses
+            summary.ram_accesses
         ));
 
-        let diff = old_access_summary
+        let diff = old_summary
             .map(|old| {
                 self.parent
-                    .report_diff(access_summary.estimated_cycles(), old.estimated_cycles())
+                    .report_diff(summary.estimated_cycles(), old.estimated_cycles())
             })
             .unwrap_or_default();
         printer.println(&format!(
             "  Est. cycles : {:>15} {diff}",
-            access_summary.estimated_cycles()
+            summary.estimated_cycles()
         ));
     }
 }

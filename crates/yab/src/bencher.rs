@@ -156,8 +156,9 @@ impl CachegrindRunner {
         });
         let summary = self.unwrap_summary(cachegrind_result);
 
-        let estimated_iterations = (self.options.warm_up_instructions / summary.instructions.total)
-            .clamp(1, self.options.max_iterations);
+        let estimated_iterations = (self.options.warm_up_instructions
+            / summary.total_instructions())
+        .clamp(1, self.options.max_iterations);
         let baseline = if estimated_iterations == 1 {
             summary
         } else {

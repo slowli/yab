@@ -585,6 +585,7 @@ dependencies = [
  "crabgrind",
  "num_cpus",
  "serde",
+ "serde_json",
  "thiserror",
 ]
 
