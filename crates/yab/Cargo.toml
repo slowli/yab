@@ -7,6 +7,12 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 readme = "README.md"
+keywords = ["benchmark", "profiler", "cachegrind"]
+categories = ["development-tools::profiling"]
+description = "Yet Another Benchmarking framework powered by `cachegrind`"
+
+[package.metadata.docs.rs]
+features = ["serde"]
 
 [dependencies]
 # Private dependencies (not exposed in public crate APIs)
@@ -21,7 +27,9 @@ serde = { workspace = true, features = ["derive"], optional = true }
 
 [dev-dependencies]
 assert_matches.workspace = true
+doc-comment.workspace = true
 serde_json.workspace = true
+version-sync.workspace = true
 
 [features]
 default = []

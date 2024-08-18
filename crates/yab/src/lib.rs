@@ -121,6 +121,8 @@
 //!
 //! [`cachegrind`]: https://valgrind.org/docs/manual/cg-manual.html
 
+// Documentation settings.
+#![doc(html_root_url = "https://docs.rs/yab/0.1.0")]
 // Linter settings.
 #![warn(missing_debug_implementations, missing_docs, bare_trait_objects)]
 #![warn(clippy::all, clippy::pedantic)]
@@ -157,3 +159,6 @@ macro_rules! main {
         }
     };
 }
+
+#[cfg(doctest)]
+doc_comment::doctest!("../README.md");
