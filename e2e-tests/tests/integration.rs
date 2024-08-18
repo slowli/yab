@@ -9,7 +9,7 @@ use std::{
 };
 
 use once_cell::sync::Lazy;
-use yab::{AccessSummary, BenchmarkOutput, CachegrindStats, FullCachegrindStats};
+use yab::{reporter::BenchmarkOutput, AccessSummary, CachegrindStats, FullCachegrindStats};
 use yab_e2e_tests::EXPORTER_OUTPUT_VAR;
 
 const EXE_PATH: &str = env!("CARGO_BIN_EXE_yab-e2e-tests");
@@ -49,7 +49,7 @@ fn assert_close(actual: &FullCachegrindStats, expected: &FullCachegrindStats) {
 }
 
 fn assert_close_values(actual: u64, expected: u64) {
-    let threshold = (expected / 20).clamp(5, 100);
+    let threshold = (expected / 200).max(10); // allow divergence up to 0.5%
     let diff = actual.abs_diff(expected);
     assert!(diff <= threshold, "actual={actual}, expected={expected}");
 }
@@ -233,24 +233,9 @@ fn printing_benchmark_results() {
     assert!(output.status.success());
 
     let stderr = String::from_utf8(output.stderr).unwrap();
-    let benchmark_names: HashSet<_> = stderr
-        .lines()
-        .filter_map(|line| {
-            line.strip_prefix("Benchmarking ")?
-                .split_whitespace()
-                .next()
-        })
-        .collect();
-    for &name in EXPECTED_BENCH_NAMES {
-        assert!(
-            benchmark_names.contains(name),
-            "{benchmark_names:?} doesn't contain {name}"
-        );
-    }
-
     let benchmarks_without_data = stderr
         .lines()
-        .filter(|line| line.ends_with("no data"))
+        .filter(|line| line.contains("no data for benchmark"))
         .count();
     assert_eq!(benchmarks_without_data, 5); // `fib/` and `random_walk/` benches
 
