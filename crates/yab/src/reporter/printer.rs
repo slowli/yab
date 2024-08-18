@@ -1,14 +1,18 @@
+//! Reporter implementation printing output to `stderr` in human-readable form.
+
 use std::{
+    any::Any,
     cmp::Ordering,
     fmt, io,
     io::IsTerminal,
     ops::DerefMut,
-    sync::{Arc, Mutex, PoisonError},
+    sync::{Arc, Mutex},
     time::Instant,
 };
 
 use anes::{Attribute, Color, ResetAttributes, SetAttribute, SetForegroundColor};
 
+use super::{BenchmarkOutput, Reporter};
 use crate::{
     cachegrind::{AccessSummary, CachegrindStats},
     BenchmarkId,
@@ -24,12 +28,12 @@ impl<W: io::Write> LinePrinter<W> {
 }
 
 #[derive(Debug)]
-pub(crate) struct Reporter<W = io::Stderr> {
+pub(crate) struct PrintingReporter<W = io::Stderr> {
     styling: bool,
     line_printer: Arc<Mutex<LinePrinter<W>>>,
 }
 
-impl<W> Clone for Reporter<W> {
+impl<W> Clone for PrintingReporter<W> {
     fn clone(&self) -> Self {
         Self {
             styling: self.styling,
@@ -38,7 +42,7 @@ impl<W> Clone for Reporter<W> {
     }
 }
 
-impl Default for Reporter {
+impl Default for PrintingReporter {
     fn default() -> Self {
         let line_printer = LinePrinter(io::stderr());
         Self {
@@ -48,18 +52,15 @@ impl Default for Reporter {
     }
 }
 
-impl Reporter {
+impl PrintingReporter {
     pub fn report_list_item(id: &BenchmarkId) {
         println!("{id}: benchmark");
     }
 }
 
-impl<W: io::Write> Reporter<W> {
-    fn lock(&self) -> impl DerefMut<Target = LinePrinter<W>> + '_ {
-        // since printer doesn't have state, it cannot be poisoned
-        self.line_printer
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+impl<W: io::Write> PrintingReporter<W> {
+    fn lock_printer(&self) -> impl DerefMut<Target = LinePrinter<W>> + '_ {
+        self.line_printer.lock().expect("line printer is poisoned")
     }
 
     fn with_color(&self, message: String, color: Color) -> String {
@@ -130,127 +131,49 @@ impl<W: io::Write> Reporter<W> {
         }
     }
 
-    pub fn report_test(&self, id: &BenchmarkId) -> TestReporter<'_, W> {
-        let test_id = self.format_id(id);
-        TestReporter {
-            parent: self,
-            test_id,
-            started_at: Instant::now(),
-        }
-    }
-
-    pub fn report_bench(&self, id: &BenchmarkId) -> BenchReporter<'_, W> {
-        let bench_id = self.format_id(id);
-        BenchReporter {
-            parent: self,
-            bench_id,
-            started_at: Some(Instant::now()),
-        }
-    }
-
-    pub fn report_bench_result(&self, id: &BenchmarkId) -> BenchReporter<'_, W> {
-        let bench_id = self.format_id(id);
-        BenchReporter {
-            parent: self,
-            bench_id,
-            started_at: None,
-        }
-    }
-
     pub fn report_fatal_error(&self, err: &dyn fmt::Display) {
         let fatal = self.with_color(self.bold("FATAL:".into()), Color::Red);
-        self.lock().println(&format!("{fatal} {err}"));
+        self.lock_printer().println(&format!("{fatal} {err}"));
     }
 
     pub fn report_warning(&self, err: &dyn fmt::Display) {
         let warn = self.with_color(self.bold("WARN:".into()), Color::Yellow);
-        self.lock().println(&format!("{warn} {err}"));
+        self.lock_printer().println(&format!("{warn} {err}"));
     }
 }
 
 #[derive(Debug)]
-#[must_use = "Test outcome should be reported"]
-pub(crate) struct TestReporter<'a, W> {
-    parent: &'a Reporter<W>,
+pub(crate) struct TestReporter<W> {
+    parent: PrintingReporter<W>,
     test_id: String,
     started_at: Instant,
 }
 
-impl<W: io::Write> TestReporter<'_, W> {
-    pub fn fail(self) {
+impl<W: io::Write> super::TestReporter for TestReporter<W> {
+    fn fail(self: Box<Self>, _: &dyn Any) {
         let id = &self.test_id;
-        self.parent.lock().println(&format!("Testing {id}: FAILED"));
+        self.parent
+            .lock_printer()
+            .println(&format!("Testing {id}: FAILED"));
     }
 
-    pub fn ok(self) {
+    fn ok(self: Box<Self>) {
         let id = &self.test_id;
         let latency = self.started_at.elapsed();
         self.parent
-            .lock()
+            .lock_printer()
             .println(&format!("Testing {id}: OK ({latency:?})"));
     }
 }
 
 #[derive(Debug)]
-#[must_use = "Test outcome should be reported"]
-pub(crate) struct BenchReporter<'a, W> {
-    parent: &'a Reporter<W>,
+struct BenchmarkReporter<W> {
+    parent: PrintingReporter<W>,
     bench_id: String,
     started_at: Option<Instant>,
 }
 
-impl<W: io::Write> BenchReporter<'_, W> {
-    pub fn no_data(self) {
-        let id = &self.bench_id;
-        let no_data = self.parent.bold("no data".into());
-        self.parent
-            .lock()
-            .println(&format!("Benchmarking {id}: {no_data}"));
-    }
-
-    pub fn baseline(&self, summary: &CachegrindStats) {
-        let id = &self.bench_id;
-        let instr = summary.total_instructions();
-        self.parent.lock().println(&format!(
-            "Benchmarking {id}: captured baseline ({instr} instructions)"
-        ));
-    }
-
-    pub fn ok(self, stats: CachegrindStats, old_stats: Option<CachegrindStats>) {
-        let mut printer = self.parent.lock();
-        let id = &self.bench_id;
-        let ok = self.parent.bold("OK".into());
-        let latency = if let Some(started_at) = self.started_at {
-            let latency = started_at.elapsed();
-            self.parent.dimmed(format!(" ({latency:?})"))
-        } else {
-            String::new()
-        };
-        printer.println(&format!("Benchmarking {id}: {ok}{latency}"));
-
-        let (stats, old_stats) = match (stats, old_stats) {
-            (CachegrindStats::Simple { instructions }, _) => {
-                let old_instructions = old_stats.as_ref().map(CachegrindStats::total_instructions);
-                self.instruction_diff(&mut printer, instructions, old_instructions);
-                return;
-            }
-            (_, Some(CachegrindStats::Simple { instructions: old })) => {
-                self.instruction_diff(&mut printer, stats.total_instructions(), Some(old));
-                return;
-            }
-            (CachegrindStats::Full(stats), None) => (stats, None),
-            (CachegrindStats::Full(stats), Some(CachegrindStats::Full(old_stats))) => {
-                (stats, Some(old_stats))
-            }
-        };
-
-        self.full_diff(
-            &mut printer,
-            stats.into(),
-            old_stats.map(AccessSummary::from),
-        );
-    }
-
+impl<W: io::Write> BenchmarkReporter<W> {
     fn instruction_diff(&self, printer: &mut LinePrinter<W>, new: u64, old: Option<u64>) {
         let diff = old
             .map(|old| self.parent.report_diff(new, old))
@@ -309,17 +232,102 @@ impl<W: io::Write> BenchReporter<'_, W> {
     }
 }
 
+impl<W: io::Write + fmt::Debug + Send> super::BenchmarkReporter for BenchmarkReporter<W> {
+    fn start_execution(&mut self) {
+        self.started_at = Some(Instant::now());
+    }
+
+    fn baseline_computed(&mut self, stats: &CachegrindStats) {
+        let id = &self.bench_id;
+        let instr = stats.total_instructions();
+        self.parent.lock_printer().println(&format!(
+            "Benchmarking {id}: captured baseline ({instr} instructions)"
+        ));
+    }
+
+    fn ok(self: Box<Self>, output: &BenchmarkOutput) {
+        let BenchmarkOutput { stats, prev_stats } = output;
+        let mut printer = self.parent.lock_printer();
+        let id = &self.bench_id;
+        let ok = self.parent.bold("OK".into());
+        let latency = if let Some(started_at) = self.started_at {
+            let latency = started_at.elapsed();
+            self.parent.dimmed(format!(" ({latency:?})"))
+        } else {
+            String::new()
+        };
+        printer.println(&format!("Benchmarking {id}: {ok}{latency}"));
+
+        let (stats, prev_stats) = match (*stats, *prev_stats) {
+            (CachegrindStats::Simple { instructions }, _) => {
+                let old_instructions = prev_stats.as_ref().map(CachegrindStats::total_instructions);
+                self.instruction_diff(&mut printer, instructions, old_instructions);
+                return;
+            }
+            (_, Some(CachegrindStats::Simple { instructions: old })) => {
+                self.instruction_diff(&mut printer, stats.total_instructions(), Some(old));
+                return;
+            }
+            (CachegrindStats::Full(stats), None) => (stats, None),
+            (CachegrindStats::Full(stats), Some(CachegrindStats::Full(old_stats))) => {
+                (stats, Some(old_stats))
+            }
+        };
+
+        self.full_diff(
+            &mut printer,
+            stats.into(),
+            prev_stats.map(AccessSummary::from),
+        );
+    }
+
+    fn warning(&mut self, warning: &dyn fmt::Display) {
+        self.parent.report_warning(warning);
+    }
+
+    fn error(self: Box<Self>, error: &dyn fmt::Display) {
+        self.parent.report_fatal_error(error);
+    }
+}
+
+impl<W> Reporter for PrintingReporter<W>
+where
+    W: io::Write + fmt::Debug + Send + 'static,
+{
+    fn new_test(&mut self, id: &BenchmarkId) -> Box<dyn super::TestReporter> {
+        Box::new(TestReporter {
+            parent: self.clone(),
+            test_id: self.format_id(id),
+            started_at: Instant::now(),
+        })
+    }
+
+    fn new_benchmark(&mut self, id: &BenchmarkId) -> Box<dyn super::BenchmarkReporter> {
+        Box::new(BenchmarkReporter {
+            parent: self.clone(),
+            bench_id: self.format_id(id),
+            started_at: None,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::cachegrind::{CachegrindDataPoint, FullCachegrindStats};
 
-    fn mock_reporter(buffer: &mut Vec<u8>) -> Reporter<&mut Vec<u8>> {
-        let line_printer = LinePrinter(buffer);
-        Reporter {
+    fn mock_reporter() -> PrintingReporter<Vec<u8>> {
+        let line_printer = LinePrinter(vec![]);
+        PrintingReporter {
             styling: false,
             line_printer: Arc::new(Mutex::new(line_printer)),
         }
+    }
+
+    fn extract_buffer(reporter: PrintingReporter<Vec<u8>>) -> String {
+        let buffer = Arc::into_inner(reporter.line_printer).unwrap();
+        let buffer = buffer.into_inner().unwrap().0;
+        String::from_utf8(buffer).unwrap()
     }
 
     fn mock_stats() -> FullCachegrindStats {
@@ -344,36 +352,41 @@ mod tests {
 
     #[test]
     fn reporting_basic_stats() {
-        let mut buffer = vec![];
-        let reporter = mock_reporter(&mut buffer);
-        let bench = reporter.report_bench(&BenchmarkId::from("test"));
+        let mut reporter = mock_reporter();
         let stats = CachegrindStats::Simple { instructions: 123 };
-        bench.ok(stats, None);
+        let mut bench = reporter.new_benchmark(&BenchmarkId::from("test"));
+        bench.start_execution();
+        bench.ok(&BenchmarkOutput {
+            stats,
+            prev_stats: None,
+        });
 
-        let buffer = String::from_utf8(buffer).unwrap();
+        let buffer = extract_buffer(reporter);
         let lines: Vec<_> = buffer.lines().collect();
         assert_eq!(lines.len(), 2, "{buffer}");
         assert!(lines[0].starts_with("Benchmarking test @"), "{buffer}");
-        assert!(lines[0].contains("reporter.rs"), "{buffer}");
+        assert!(lines[0].contains("printer.rs"), "{buffer}");
         assert!(lines[0].contains(": OK ("), "{buffer}");
         assert_eq!(lines[1].trim(), "Instructions:             123");
     }
 
     #[test]
     fn reporting_basic_stats_with_diff() {
-        let mut buffer = vec![];
-        let reporter = mock_reporter(&mut buffer);
-        let bench = reporter.report_bench(&BenchmarkId::from("test"));
+        let mut reporter = mock_reporter();
         let stats = CachegrindStats::Simple { instructions: 120 };
-        let old_stats = CachegrindStats::Simple { instructions: 100 };
-        bench.ok(stats, Some(old_stats));
+        let prev_stats = CachegrindStats::Simple { instructions: 100 };
+        reporter
+            .new_benchmark(&BenchmarkId::from("test"))
+            .ok(&BenchmarkOutput {
+                stats,
+                prev_stats: Some(prev_stats),
+            });
 
-        let buffer = String::from_utf8(buffer).unwrap();
+        let buffer = extract_buffer(reporter);
         let lines: Vec<_> = buffer.lines().collect();
         assert_eq!(lines.len(), 2, "{buffer}");
         assert!(lines[0].starts_with("Benchmarking test @"), "{buffer}");
-        assert!(lines[0].contains("reporter.rs"), "{buffer}");
-        assert!(lines[0].contains(": OK ("), "{buffer}");
+        assert!(lines[0].contains("printer.rs"), "{buffer}");
         assert_eq!(
             lines[1].trim(),
             "Instructions:             120             +20 (+20.00%)"
@@ -382,18 +395,20 @@ mod tests {
 
     #[test]
     fn reporting_full_stats() {
-        let mut buffer = vec![];
-        let reporter = mock_reporter(&mut buffer);
-        let bench = reporter.report_bench(&BenchmarkId::from("test"));
+        let mut reporter = mock_reporter();
         let stats = CachegrindStats::Full(mock_stats());
-        bench.ok(stats, None);
+        reporter
+            .new_benchmark(&BenchmarkId::from("test"))
+            .ok(&BenchmarkOutput {
+                stats,
+                prev_stats: None,
+            });
 
-        let buffer = String::from_utf8(buffer).unwrap();
+        let buffer = extract_buffer(reporter);
         let lines: Vec<_> = buffer.lines().collect();
         assert_eq!(lines.len(), 6, "{buffer}");
         assert!(lines[0].starts_with("Benchmarking test @"), "{buffer}");
-        assert!(lines[0].contains("reporter.rs"), "{buffer}");
-        assert!(lines[0].contains(": OK ("), "{buffer}");
+        assert!(lines[0].contains("printer.rs"), "{buffer}");
         assert_eq!(lines[1].trim(), "Instructions:             100");
         assert_eq!(lines[2].trim(), "L1 hits     :             250");
         assert_eq!(lines[3].trim(), "L2/L3 hits  :              80");
@@ -403,21 +418,23 @@ mod tests {
 
     #[test]
     fn reporting_full_stats_with_diff() {
-        let mut buffer = vec![];
-        let reporter = mock_reporter(&mut buffer);
-        let bench = reporter.report_bench(&BenchmarkId::from("test"));
+        let mut reporter = mock_reporter();
         let stats = CachegrindStats::Full(mock_stats());
-        let mut old_stats = mock_stats();
-        old_stats.instructions.total += 10;
-        old_stats.data_reads.l1_misses = 20;
-        bench.ok(stats, Some(CachegrindStats::Full(old_stats)));
+        let mut prev_stats = mock_stats();
+        prev_stats.instructions.total += 10;
+        prev_stats.data_reads.l1_misses = 20;
+        reporter
+            .new_benchmark(&BenchmarkId::from("test"))
+            .ok(&BenchmarkOutput {
+                stats,
+                prev_stats: Some(CachegrindStats::Full(prev_stats)),
+            });
 
-        let buffer = String::from_utf8(buffer).unwrap();
+        let buffer = extract_buffer(reporter);
         let lines: Vec<_> = buffer.lines().collect();
         assert_eq!(lines.len(), 6, "{buffer}");
         assert!(lines[0].starts_with("Benchmarking test @"), "{buffer}");
-        assert!(lines[0].contains("reporter.rs"), "{buffer}");
-        assert!(lines[0].contains(": OK ("), "{buffer}");
+        assert!(lines[0].contains("printer.rs"), "{buffer}");
         assert_eq!(
             lines[1].trim(),
             "Instructions:             100             -10 (-9.09%)"

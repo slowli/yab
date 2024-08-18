@@ -134,15 +134,13 @@ pub use crate::{
     bencher::Bencher,
     cachegrind::{AccessSummary, CachegrindStats, Capture, CaptureGuard, FullCachegrindStats},
     id::BenchmarkId,
-    output::{BenchmarkOutput, BenchmarkProcessor},
 };
 
 mod bencher;
 mod cachegrind;
 mod id;
 mod options;
-mod output;
-mod reporter;
+pub mod reporter;
 mod utils;
 
 /// Wraps a provided function to create the entrypoint for a benchmark executable. The function

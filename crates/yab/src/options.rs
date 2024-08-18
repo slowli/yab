@@ -2,7 +2,7 @@ use std::{env, num, num::NonZeroUsize, process, process::Command};
 
 use clap::Parser;
 
-use crate::{bencher::BenchMode, reporter::Reporter, BenchmarkId};
+use crate::{bencher::BenchMode, reporter::PrintingReporter, BenchmarkId};
 
 const DEFAULT_CACHEGRIND_WRAPPER: &[&str] = &[
     "setarch",
@@ -61,7 +61,7 @@ pub(crate) struct BenchOptions {
 }
 
 impl BenchOptions {
-    pub fn validate(&self, reporter: &mut Reporter) -> bool {
+    pub fn validate(&self, reporter: &mut PrintingReporter) -> bool {
         if self.warm_up_instructions == 0 {
             reporter.report_fatal_error(&"`warm_up_instructions` must be positive");
             return false;
