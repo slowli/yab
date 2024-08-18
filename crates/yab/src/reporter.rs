@@ -14,33 +14,48 @@ use crate::{
     BenchmarkId,
 };
 
-#[derive(Debug, Default)]
-struct LinePrinter;
+#[derive(Debug)]
+struct LinePrinter<W>(W);
 
-impl LinePrinter {
-    #[allow(clippy::unused_self)] // intentional design choice
+impl<W: io::Write> LinePrinter<W> {
     fn println(&mut self, line: &str) {
-        eprintln!("{line}");
+        writeln!(&mut self.0, "{line}").expect("I/O error writing to stderr");
     }
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct Reporter {
+#[derive(Debug)]
+pub(crate) struct Reporter<W = io::Stderr> {
     styling: bool,
-    line_printer: Arc<Mutex<LinePrinter>>,
+    line_printer: Arc<Mutex<LinePrinter<W>>>,
+}
+
+impl<W> Clone for Reporter<W> {
+    fn clone(&self) -> Self {
+        Self {
+            styling: self.styling,
+            line_printer: self.line_printer.clone(),
+        }
+    }
 }
 
 impl Default for Reporter {
     fn default() -> Self {
+        let line_printer = LinePrinter(io::stderr());
         Self {
             styling: io::stderr().is_terminal(),
-            line_printer: Arc::default(),
+            line_printer: Arc::new(Mutex::new(line_printer)),
         }
     }
 }
 
 impl Reporter {
-    fn lock(&self) -> impl DerefMut<Target = LinePrinter> + '_ {
+    pub fn report_list_item(id: &BenchmarkId) {
+        println!("{id}: benchmark");
+    }
+}
+
+impl<W: io::Write> Reporter<W> {
+    fn lock(&self) -> impl DerefMut<Target = LinePrinter<W>> + '_ {
         // since printer doesn't have state, it cannot be poisoned
         self.line_printer
             .lock()
@@ -115,7 +130,7 @@ impl Reporter {
         }
     }
 
-    pub fn report_test(&self, id: &BenchmarkId) -> TestReporter<'_> {
+    pub fn report_test(&self, id: &BenchmarkId) -> TestReporter<'_, W> {
         let test_id = self.format_id(id);
         TestReporter {
             parent: self,
@@ -124,7 +139,7 @@ impl Reporter {
         }
     }
 
-    pub fn report_bench(&self, id: &BenchmarkId) -> BenchReporter<'_> {
+    pub fn report_bench(&self, id: &BenchmarkId) -> BenchReporter<'_, W> {
         let bench_id = self.format_id(id);
         BenchReporter {
             parent: self,
@@ -133,17 +148,13 @@ impl Reporter {
         }
     }
 
-    pub fn report_bench_result(&self, id: &BenchmarkId) -> BenchReporter<'_> {
+    pub fn report_bench_result(&self, id: &BenchmarkId) -> BenchReporter<'_, W> {
         let bench_id = self.format_id(id);
         BenchReporter {
             parent: self,
             bench_id,
             started_at: None,
         }
-    }
-
-    pub fn report_list_item(id: &BenchmarkId) {
-        println!("{id}: benchmark");
     }
 
     pub fn report_fatal_error(&self, err: &dyn fmt::Display) {
@@ -159,13 +170,13 @@ impl Reporter {
 
 #[derive(Debug)]
 #[must_use = "Test outcome should be reported"]
-pub(crate) struct TestReporter<'a> {
-    parent: &'a Reporter,
+pub(crate) struct TestReporter<'a, W> {
+    parent: &'a Reporter<W>,
     test_id: String,
     started_at: Instant,
 }
 
-impl TestReporter<'_> {
+impl<W: io::Write> TestReporter<'_, W> {
     pub fn fail(self) {
         let id = &self.test_id;
         self.parent.lock().println(&format!("Testing {id}: FAILED"));
@@ -182,13 +193,13 @@ impl TestReporter<'_> {
 
 #[derive(Debug)]
 #[must_use = "Test outcome should be reported"]
-pub(crate) struct BenchReporter<'a> {
-    parent: &'a Reporter,
+pub(crate) struct BenchReporter<'a, W> {
+    parent: &'a Reporter<W>,
     bench_id: String,
     started_at: Option<Instant>,
 }
 
-impl BenchReporter<'_> {
+impl<W: io::Write> BenchReporter<'_, W> {
     pub fn no_data(self) {
         let id = &self.bench_id;
         let no_data = self.parent.bold("no data".into());
@@ -240,7 +251,7 @@ impl BenchReporter<'_> {
         );
     }
 
-    fn instruction_diff(&self, printer: &mut LinePrinter, new: u64, old: Option<u64>) {
+    fn instruction_diff(&self, printer: &mut LinePrinter<W>, new: u64, old: Option<u64>) {
         let diff = old
             .map(|old| self.parent.report_diff(new, old))
             .unwrap_or_default();
@@ -249,7 +260,7 @@ impl BenchReporter<'_> {
 
     fn full_diff(
         &self,
-        printer: &mut LinePrinter,
+        printer: &mut LinePrinter<W>,
         summary: AccessSummary,
         old_summary: Option<AccessSummary>,
     ) {
@@ -295,5 +306,137 @@ impl BenchReporter<'_> {
             "  Est. cycles : {:>15} {diff}",
             summary.estimated_cycles()
         ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cachegrind::{CachegrindDataPoint, FullCachegrindStats};
+
+    fn mock_reporter(buffer: &mut Vec<u8>) -> Reporter<&mut Vec<u8>> {
+        let line_printer = LinePrinter(buffer);
+        Reporter {
+            styling: false,
+            line_printer: Arc::new(Mutex::new(line_printer)),
+        }
+    }
+
+    fn mock_stats() -> FullCachegrindStats {
+        FullCachegrindStats {
+            instructions: CachegrindDataPoint {
+                total: 100,
+                l1_misses: 20,
+                l3_misses: 10,
+            },
+            data_reads: CachegrindDataPoint {
+                total: 200,
+                l1_misses: 40,
+                l3_misses: 10,
+            },
+            data_writes: CachegrindDataPoint {
+                total: 50,
+                l1_misses: 40,
+                l3_misses: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn reporting_basic_stats() {
+        let mut buffer = vec![];
+        let reporter = mock_reporter(&mut buffer);
+        let bench = reporter.report_bench(&BenchmarkId::from("test"));
+        let stats = CachegrindStats::Simple { instructions: 123 };
+        bench.ok(stats, None);
+
+        let buffer = String::from_utf8(buffer).unwrap();
+        let lines: Vec<_> = buffer.lines().collect();
+        assert_eq!(lines.len(), 2, "{buffer}");
+        assert!(lines[0].starts_with("Benchmarking test @"), "{buffer}");
+        assert!(lines[0].contains("reporter.rs"), "{buffer}");
+        assert!(lines[0].contains(": OK ("), "{buffer}");
+        assert_eq!(lines[1].trim(), "Instructions:             123");
+    }
+
+    #[test]
+    fn reporting_basic_stats_with_diff() {
+        let mut buffer = vec![];
+        let reporter = mock_reporter(&mut buffer);
+        let bench = reporter.report_bench(&BenchmarkId::from("test"));
+        let stats = CachegrindStats::Simple { instructions: 120 };
+        let old_stats = CachegrindStats::Simple { instructions: 100 };
+        bench.ok(stats, Some(old_stats));
+
+        let buffer = String::from_utf8(buffer).unwrap();
+        let lines: Vec<_> = buffer.lines().collect();
+        assert_eq!(lines.len(), 2, "{buffer}");
+        assert!(lines[0].starts_with("Benchmarking test @"), "{buffer}");
+        assert!(lines[0].contains("reporter.rs"), "{buffer}");
+        assert!(lines[0].contains(": OK ("), "{buffer}");
+        assert_eq!(
+            lines[1].trim(),
+            "Instructions:             120             +20 (+20.00%)"
+        );
+    }
+
+    #[test]
+    fn reporting_full_stats() {
+        let mut buffer = vec![];
+        let reporter = mock_reporter(&mut buffer);
+        let bench = reporter.report_bench(&BenchmarkId::from("test"));
+        let stats = CachegrindStats::Full(mock_stats());
+        bench.ok(stats, None);
+
+        let buffer = String::from_utf8(buffer).unwrap();
+        let lines: Vec<_> = buffer.lines().collect();
+        assert_eq!(lines.len(), 6, "{buffer}");
+        assert!(lines[0].starts_with("Benchmarking test @"), "{buffer}");
+        assert!(lines[0].contains("reporter.rs"), "{buffer}");
+        assert!(lines[0].contains(": OK ("), "{buffer}");
+        assert_eq!(lines[1].trim(), "Instructions:             100");
+        assert_eq!(lines[2].trim(), "L1 hits     :             250");
+        assert_eq!(lines[3].trim(), "L2/L3 hits  :              80");
+        assert_eq!(lines[4].trim(), "RAM accesses:              20");
+        assert_eq!(lines[5].trim(), "Est. cycles :            1350");
+    }
+
+    #[test]
+    fn reporting_full_stats_with_diff() {
+        let mut buffer = vec![];
+        let reporter = mock_reporter(&mut buffer);
+        let bench = reporter.report_bench(&BenchmarkId::from("test"));
+        let stats = CachegrindStats::Full(mock_stats());
+        let mut old_stats = mock_stats();
+        old_stats.instructions.total += 10;
+        old_stats.data_reads.l1_misses = 20;
+        bench.ok(stats, Some(CachegrindStats::Full(old_stats)));
+
+        let buffer = String::from_utf8(buffer).unwrap();
+        let lines: Vec<_> = buffer.lines().collect();
+        assert_eq!(lines.len(), 6, "{buffer}");
+        assert!(lines[0].starts_with("Benchmarking test @"), "{buffer}");
+        assert!(lines[0].contains("reporter.rs"), "{buffer}");
+        assert!(lines[0].contains(": OK ("), "{buffer}");
+        assert_eq!(
+            lines[1].trim(),
+            "Instructions:             100             -10 (-9.09%)"
+        );
+        assert_eq!(
+            lines[2].trim(),
+            "L1 hits     :             250             -30 (-10.71%)"
+        );
+        assert_eq!(
+            lines[3].trim(),
+            "L2/L3 hits  :              80             +20 (+33.33%)"
+        );
+        assert_eq!(
+            lines[4].trim(),
+            "RAM accesses:              20     (no change)"
+        );
+        assert_eq!(
+            lines[5].trim(),
+            "Est. cycles :            1350             +70 (+5.47%)"
+        );
     }
 }
