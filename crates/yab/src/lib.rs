@@ -79,3 +79,18 @@ mod options;
 mod output;
 mod reporter;
 mod utils;
+
+/// Wraps a provided function to create the entrypoint for a benchmark executable. The function
+/// must have `fn(&mut` [`Bencher`]`)` signature.
+///
+/// # Examples
+///
+/// See [crate docs](index.html) for the examples of usage.
+#[macro_export]
+macro_rules! main {
+    ($function:path) => {
+        fn main() {
+            $function(&mut $crate::Bencher::default());
+        }
+    };
+}

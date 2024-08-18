@@ -28,8 +28,7 @@ impl Drop for FibGuard {
     }
 }
 
-pub fn main() {
-    let mut bencher = Bencher::default();
+pub fn main(bencher: &mut Bencher) {
     bencher.set_processor(BenchmarkExporter::default());
     bencher
         .bench("fib_short", || fibonacci(black_box(10)))
