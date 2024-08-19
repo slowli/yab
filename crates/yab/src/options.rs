@@ -62,14 +62,14 @@ pub(crate) struct BenchOptions {
 
 impl BenchOptions {
     pub fn validate(&self, reporter: &mut PrintingReporter) -> bool {
-        reporter.report_debug(&format!("Started benchmarking with options: {self:?}"));
+        reporter.report_debug(format_args!("Started benchmarking with options: {self:?}"));
 
         if self.warm_up_instructions == 0 {
-            reporter.report_error(&"`warm_up_instructions` must be positive", None);
+            reporter.report_error(None, &"`warm_up_instructions` must be positive");
             return false;
         }
         if self.max_iterations == 0 {
-            reporter.report_error(&"`max_iterations` must be positive", None);
+            reporter.report_error(None, &"`max_iterations` must be positive");
             return false;
         }
         true

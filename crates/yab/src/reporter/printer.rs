@@ -5,7 +5,7 @@ use std::{
     cmp::Ordering,
     fmt, io,
     io::IsTerminal,
-    ops::DerefMut,
+    ops,
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -18,12 +18,183 @@ use crate::{
     BenchmarkId, FullCachegrindStats,
 };
 
+const DIFF_WIDTH: usize = 10;
+
 #[derive(Debug)]
-struct LinePrinter<W>(W);
+struct Styled<'a, W: io::Write>(&'a mut LinePrinter<W>);
+
+impl<W: io::Write> ops::Deref for Styled<'_, W> {
+    type Target = LinePrinter<W>;
+
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+impl<W: io::Write> ops::DerefMut for Styled<'_, W> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0
+    }
+}
+
+impl<W: io::Write> Drop for Styled<'_, W> {
+    fn drop(&mut self) {
+        if self.0.style_nesting > 0 {
+            self.0.style_nesting -= 1;
+            if self.0.style_nesting == 0 {
+                self.0.print(format_args!("{ResetAttributes}"));
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+struct LinePrinter<W> {
+    inner: W,
+    styling: bool,
+    style_nesting: usize,
+}
 
 impl<W: io::Write> LinePrinter<W> {
-    fn println(&mut self, line: &str) {
-        writeln!(&mut self.0, "{line}").expect("I/O error writing to stderr");
+    fn borrow(&mut self) -> Styled<'_, W> {
+        if self.styling {
+            self.style_nesting += 1;
+        }
+        Styled(self)
+    }
+
+    fn print(&mut self, args: fmt::Arguments<'_>) {
+        self.inner
+            .write_fmt(args)
+            .expect("I/O error writing to stderr");
+    }
+
+    fn print_str(&mut self, s: &str) {
+        self.inner
+            .write_all(s.as_bytes())
+            .expect("I/O error writing to stderr");
+    }
+
+    fn colored(&mut self, color: Color) -> Styled<'_, W> {
+        if self.styling {
+            self.print(format_args!("{}", SetForegroundColor(color)));
+        }
+        self.borrow()
+    }
+
+    fn bold(&mut self) -> Styled<'_, W> {
+        if self.styling {
+            self.print(format_args!("{}", SetAttribute(Attribute::Bold)));
+        }
+        self.borrow()
+    }
+
+    fn dimmed(&mut self) -> Styled<'_, W> {
+        if self.styling {
+            self.print(format_args!("{}", SetAttribute(Attribute::Faint)));
+        }
+        self.borrow()
+    }
+
+    fn print_debug(&mut self, args: fmt::Arguments<'_>) {
+        self.bold().colored(Color::DarkMagenta).print_str("DEBUG:");
+        self.print(format_args!(" {args}\n"));
+    }
+
+    fn print_warning(&mut self, id: &BenchmarkId, args: fmt::Arguments<'_>) {
+        self.bold().colored(Color::DarkMagenta).print_str("WARN:");
+        self.print_str(" ");
+        self.print_id(id);
+        self.print(format_args!(" {args}\n"));
+    }
+
+    fn print_error(&mut self, id: Option<&BenchmarkId>, args: fmt::Arguments<'_>) {
+        self.bold().colored(Color::DarkMagenta).print_str("ERROR:");
+        if let Some(id) = id {
+            self.print_str(" ");
+            self.print_id(id);
+        }
+        self.print(format_args!(" {args}\n"));
+    }
+
+    fn print_id(&mut self, id: &BenchmarkId) {
+        let BenchmarkId {
+            name,
+            args,
+            location,
+        } = id;
+
+        self.print(format_args!("{name}"));
+        if let Some(args) = args {
+            self.print(format_args!("/{args}"));
+        }
+        self.dimmed()
+            .print(format_args!(" @ {}:{}", location.file(), location.line()));
+    }
+
+    #[allow(clippy::cast_precision_loss, clippy::cast_possible_wrap)] // fine for reporting
+    fn print_diff(&mut self, new: u64, old: u64) {
+        match new.cmp(&old) {
+            Ordering::Less => {
+                self.colored(Color::Green).print(format_args!(
+                    "{:>+DIFF_WIDTH$} ({:+.2}%)",
+                    new as i64 - old as i64,
+                    (old - new) as f32 * -100.0 / old as f32
+                ));
+            }
+            Ordering::Greater => {
+                self.colored(Color::Red).print(format_args!(
+                    "{:>+DIFF_WIDTH$} ({:+.2}%)",
+                    new - old,
+                    (new - old) as f32 * 100.0 / old as f32
+                ));
+            }
+            Ordering::Equal => { /* don't print anything */ }
+        }
+    }
+
+    fn print_row(&mut self, label: &str, last: bool, new: u64, old: Option<u64>) {
+        let line = if last { '└' } else { '├' };
+        self.print(format_args!("{line} {label:<12}: {new:>15}"));
+        if let Some(old) = old {
+            self.print_str(" ");
+            self.print_diff(new, old);
+        }
+        self.print_str("\n");
+    }
+
+    fn print_detail_row(&mut self, label: &str, last: bool, new: u64, old: Option<u64>) {
+        let line = if last { '└' } else { '├' };
+        self.print(format_args!("│ {line} {label:<10}: {new:>15}"));
+        if let Some(old) = old {
+            self.print_str(" ");
+            self.print_diff(new, old);
+        }
+        self.print_str("\n");
+    }
+
+    fn print_details(&mut self, new: AccessDetails, old: Option<AccessDetails>) {
+        let old_instructions = old.map(|old| old.instructions);
+        let print_instr = new.instructions > 0 || old_instructions > Some(0);
+        let old_data_reads = old.map(|old| old.data_reads);
+        let print_reads = new.data_reads > 0 || old_data_reads > Some(0);
+        let old_data_writes = old.map(|old| old.data_writes);
+        let print_writes = new.data_writes > 0 || old_data_writes > Some(0);
+
+        if print_instr {
+            self.print_detail_row(
+                "Instr.",
+                !print_reads && !print_writes,
+                new.instructions,
+                old_instructions,
+            );
+        }
+        if print_reads {
+            self.print_detail_row("Data read", !print_writes, new.data_reads, old_data_reads);
+        }
+        if print_writes {
+            self.print_detail_row("Data write", true, new.data_writes, old_data_writes);
+        }
     }
 }
 
@@ -36,7 +207,6 @@ pub(crate) enum Verbosity {
 
 #[derive(Debug)]
 pub(crate) struct PrintingReporter<W = io::Stderr> {
-    styling: bool,
     verbosity: Verbosity,
     line_printer: Arc<Mutex<LinePrinter<W>>>,
 }
@@ -44,7 +214,6 @@ pub(crate) struct PrintingReporter<W = io::Stderr> {
 impl<W> Clone for PrintingReporter<W> {
     fn clone(&self) -> Self {
         Self {
-            styling: self.styling,
             verbosity: self.verbosity,
             line_printer: self.line_printer.clone(),
         }
@@ -53,9 +222,12 @@ impl<W> Clone for PrintingReporter<W> {
 
 impl Default for PrintingReporter {
     fn default() -> Self {
-        let line_printer = LinePrinter(io::stderr());
-        Self {
+        let line_printer = LinePrinter {
+            inner: io::stderr(),
             styling: io::stderr().is_terminal(),
+            style_nesting: 0,
+        };
+        Self {
             verbosity: Verbosity::Verbose,
             line_printer: Arc::new(Mutex::new(line_printer)),
         }
@@ -69,189 +241,62 @@ impl PrintingReporter {
 }
 
 impl<W: io::Write> PrintingReporter<W> {
-    fn lock_printer(&self) -> impl DerefMut<Target = LinePrinter<W>> + '_ {
+    fn lock_printer(&self) -> impl ops::DerefMut<Target = LinePrinter<W>> + '_ {
         self.line_printer.lock().expect("line printer is poisoned")
     }
 
-    fn with_color(&self, message: String, color: Color) -> String {
-        if self.styling {
-            format!("{}{message}{ResetAttributes}", SetForegroundColor(color))
-        } else {
-            message
-        }
-    }
-
-    fn bold(&self, message: String) -> String {
-        if self.styling {
-            format!(
-                "{}{message}{ResetAttributes}",
-                SetAttribute(Attribute::Bold)
-            )
-        } else {
-            message
-        }
-    }
-
-    fn dimmed(&self, message: String) -> String {
-        if self.styling {
-            format!(
-                "{}{message}{ResetAttributes}",
-                SetAttribute(Attribute::Faint)
-            )
-        } else {
-            message
-        }
-    }
-
-    fn format_id(&self, id: &BenchmarkId) -> String {
-        let BenchmarkId {
-            name,
-            args,
-            location,
-        } = id;
-        let args = if let Some(args) = args {
-            format!("/{args}")
-        } else {
-            String::new()
-        };
-        let location = self.dimmed(format!(" @ {}:{}", location.file(), location.line()));
-        format!("{name}{args}{location}")
-    }
-
-    #[allow(clippy::cast_precision_loss, clippy::cast_possible_wrap)] // fine for reporting
-    fn format_diff(&self, new: u64, old: u64) -> String {
-        const DIFF_WIDTH: usize = 10;
-
-        match new.cmp(&old) {
-            Ordering::Less => {
-                let diff = format!(
-                    "{:>+DIFF_WIDTH$} ({:+.2}%)",
-                    new as i64 - old as i64,
-                    (old - new) as f32 * -100.0 / old as f32
-                );
-                self.with_color(diff, Color::Green)
-            }
-            Ordering::Greater => {
-                let diff = format!(
-                    "{:>+DIFF_WIDTH$} ({:+.2}%)",
-                    new - old,
-                    (new - old) as f32 * 100.0 / old as f32
-                );
-                self.with_color(diff, Color::Red)
-            }
-            Ordering::Equal => String::new(),
-        }
-    }
-
-    fn report_optional_diff(
-        &self,
-        printer: &mut LinePrinter<W>,
-        label: &str,
-        new: u64,
-        old: Option<u64>,
-    ) {
-        if new != 0 || old > Some(0) {
-            let diff = old
-                .map(|old| self.format_diff(new, old))
-                .unwrap_or_default();
-            printer.println(&format!("{label}: {new:>15} {diff}"));
-        }
-    }
-
-    fn report_details(
-        &self,
-        printer: &mut LinePrinter<W>,
-        new: AccessDetails,
-        old: Option<AccessDetails>,
-    ) {
-        self.report_optional_diff(
-            printer,
-            "    Instr.    ",
-            new.instructions,
-            old.map(|old| old.instructions),
-        );
-        self.report_optional_diff(
-            printer,
-            "    Data read ",
-            new.data_reads,
-            old.map(|old| old.data_reads),
-        );
-        self.report_optional_diff(
-            printer,
-            "    Data write",
-            new.data_writes,
-            old.map(|old| old.data_writes),
-        );
-    }
-
-    pub(crate) fn report_debug(&self, info: &str) {
+    pub(crate) fn report_debug(&self, args: fmt::Arguments<'_>) {
         if self.verbosity < Verbosity::Verbose {
             return;
         }
-        let trace = self.with_color(self.bold("DEBUG:".into()), Color::DarkMagenta);
-        self.lock_printer().println(&format!("{trace} {info}"));
+        self.lock_printer().print_debug(args);
     }
 
-    pub(crate) fn report_error(&self, err: &dyn fmt::Display, id: Option<&str>) {
-        let error = self.with_color(self.bold("ERROR:".into()), Color::Red);
-        let maybe_id = if let Some(id) = id {
-            format!(" {id}:")
-        } else {
-            String::new()
-        };
-        self.lock_printer()
-            .println(&format!("{error}{maybe_id} {err}"));
+    pub(crate) fn report_error(&self, id: Option<&BenchmarkId>, err: &dyn fmt::Display) {
+        self.lock_printer().print_error(id, format_args!("{err}"));
     }
 
-    fn report_warning(&self, err: &dyn fmt::Display, id: &str) {
-        let warn = self.with_color(self.bold("WARN:".into()), Color::Yellow);
-        self.lock_printer().println(&format!("{warn} {id}: {err}"));
+    fn report_warning(&self, id: &BenchmarkId, err: &dyn fmt::Display) {
+        self.lock_printer().print_warning(id, format_args!("{err}"));
     }
 }
 
 #[derive(Debug)]
 pub(crate) struct TestReporter<W> {
     parent: PrintingReporter<W>,
-    test_id: String,
+    test_id: BenchmarkId,
     started_at: Instant,
 }
 
 impl<W: io::Write> super::TestReporter for TestReporter<W> {
     fn ok(self: Box<Self>) {
-        let id = &self.test_id;
+        let mut printer = self.parent.lock_printer();
+        printer.print(format_args!("Testing "));
+        printer.print_id(&self.test_id);
+        printer.print_str(": ");
+        printer.bold().print_str("OK");
         let latency = self.started_at.elapsed();
-        let ok = self.parent.bold("OK".into());
-        self.parent
-            .lock_printer()
-            .println(&format!("Testing {id}: {ok} ({latency:?})"));
+        printer.print(format_args!(" ({latency:?})\n"));
     }
 
     fn fail(self: Box<Self>, _: &dyn Any) {
-        let id = &self.test_id;
-        let failed = self
-            .parent
-            .with_color(self.parent.bold("FAILED".into()), Color::Red);
-        self.parent
-            .lock_printer()
-            .println(&format!("Testing {id}: {failed}"));
+        let mut printer = self.parent.lock_printer();
+        printer.print(format_args!("Testing "));
+        printer.print_id(&self.test_id);
+        printer.print_str(": ");
+        printer.bold().colored(Color::Red).print_str("FAILED");
+        printer.print_str("\n");
     }
 }
 
 #[derive(Debug)]
 struct BenchmarkReporter<W> {
     parent: PrintingReporter<W>,
-    bench_id: String,
+    bench_id: BenchmarkId,
     started_at: Option<Instant>,
 }
 
 impl<W: io::Write> BenchmarkReporter<W> {
-    fn instruction_diff(&self, printer: &mut LinePrinter<W>, new: u64, old: Option<u64>) {
-        let diff = old
-            .map(|old| self.parent.format_diff(new, old))
-            .unwrap_or_default();
-        printer.println(&format!("  Instructions: {new:>15} {diff}"));
-    }
-
     fn full_diff(
         &self,
         printer: &mut LinePrinter<W>,
@@ -262,63 +307,58 @@ impl<W: io::Write> BenchmarkReporter<W> {
         let summary = AccessSummary::from(stats);
         let old_summary = old_stats.map(AccessSummary::from);
 
-        let diff = old_summary
-            .map(|old| parent.format_diff(summary.instructions, old.instructions))
-            .unwrap_or_default();
-        printer.println(&format!(
-            "  Instructions: {:>15} {diff}",
-            summary.instructions
-        ));
+        printer.print_row(
+            "Instructions",
+            false,
+            summary.instructions,
+            old_summary.map(|old| old.instructions),
+        );
 
-        let diff = old_summary
-            .map(|old| parent.format_diff(summary.l1_hits, old.l1_hits))
-            .unwrap_or_default();
-        printer.println(&format!("  L1 hits     : {:>15} {diff}", summary.l1_hits));
-
+        printer.print_row(
+            "L1 hits",
+            false,
+            summary.l1_hits,
+            old_summary.map(|old| old.l1_hits),
+        );
         if parent.verbosity >= Verbosity::Verbose {
-            parent.report_details(
-                printer,
+            printer.print_details(
                 stats.l1_hits(),
                 old_stats.as_ref().map(FullCachegrindStats::l1_hits),
             );
         }
 
-        let diff = old_summary
-            .map(|old| parent.format_diff(summary.l3_hits, old.l3_hits))
-            .unwrap_or_default();
-        printer.println(&format!("  L2/L3 hits  : {:>15} {diff}", summary.l3_hits));
-
+        printer.print_row(
+            "L2/L3 hits",
+            false,
+            summary.l3_hits,
+            old_summary.map(|old| old.l3_hits),
+        );
         if parent.verbosity >= Verbosity::Verbose {
-            parent.report_details(
-                printer,
+            printer.print_details(
                 stats.l3_hits(),
                 old_stats.as_ref().map(FullCachegrindStats::l3_hits),
             );
         }
 
-        let diff = old_summary
-            .map(|old| parent.format_diff(summary.ram_accesses, old.ram_accesses))
-            .unwrap_or_default();
-        printer.println(&format!(
-            "  RAM accesses: {:>15} {diff}",
-            summary.ram_accesses
-        ));
-
+        printer.print_row(
+            "RAM accesses",
+            false,
+            summary.ram_accesses,
+            old_summary.map(|old| old.ram_accesses),
+        );
         if parent.verbosity >= Verbosity::Verbose {
-            parent.report_details(
-                printer,
+            printer.print_details(
                 stats.ram(),
                 old_stats.as_ref().map(FullCachegrindStats::ram),
             );
         }
 
-        let diff = old_summary
-            .map(|old| parent.format_diff(summary.estimated_cycles(), old.estimated_cycles()))
-            .unwrap_or_default();
-        printer.println(&format!(
-            "  Est. cycles : {:>15} {diff}",
-            summary.estimated_cycles()
-        ));
+        printer.print_row(
+            "Est. cycles",
+            true,
+            summary.estimated_cycles(),
+            old_summary.map(|old| old.estimated_cycles()),
+        );
     }
 }
 
@@ -332,34 +372,35 @@ impl<W: io::Write + fmt::Debug + Send> super::BenchmarkReporter for BenchmarkRep
             return;
         }
 
-        let id = &self.bench_id;
+        let mut printer = self.parent.lock_printer();
+        printer.print_str("Benchmarking ");
+        printer.print_id(&self.bench_id);
         let instr = stats.total_instructions();
-        self.parent.lock_printer().println(&format!(
-            "Benchmarking {id}: captured baseline ({instr} instructions)"
-        ));
+        printer.print(format_args!(": captured baseline ({instr} instructions)\n"));
     }
 
     fn ok(self: Box<Self>, output: &BenchmarkOutput) {
         let BenchmarkOutput { stats, prev_stats } = output;
+
         let mut printer = self.parent.lock_printer();
-        let id = &self.bench_id;
-        let ok = self.parent.bold("OK".into());
-        let latency = if let Some(started_at) = self.started_at {
+        printer.print_str("Benchmarking ");
+        printer.print_id(&self.bench_id);
+        printer.print_str(": ");
+        printer.bold().print_str("OK");
+        if let Some(started_at) = self.started_at {
             let latency = started_at.elapsed();
-            self.parent.dimmed(format!(" ({latency:?})"))
-        } else {
-            String::new()
-        };
-        printer.println(&format!("Benchmarking {id}: {ok}{latency}"));
+            printer.dimmed().print(format_args!(" ({latency:?})"));
+        }
+        printer.print_str("\n");
 
         let (stats, prev_stats) = match (*stats, *prev_stats) {
             (CachegrindStats::Simple { instructions }, _) => {
                 let old_instructions = prev_stats.as_ref().map(CachegrindStats::total_instructions);
-                self.instruction_diff(&mut printer, instructions, old_instructions);
+                printer.print_row("Instructions", true, instructions, old_instructions);
                 return;
             }
             (_, Some(CachegrindStats::Simple { instructions: old })) => {
-                self.instruction_diff(&mut printer, stats.total_instructions(), Some(old));
+                printer.print_row("Instructions", true, stats.total_instructions(), Some(old));
                 return;
             }
             (CachegrindStats::Full(stats), None) => (stats, None),
@@ -372,11 +413,11 @@ impl<W: io::Write + fmt::Debug + Send> super::BenchmarkReporter for BenchmarkRep
     }
 
     fn warning(&mut self, warning: &dyn fmt::Display) {
-        self.parent.report_warning(warning, &self.bench_id);
+        self.parent.report_warning(&self.bench_id, warning);
     }
 
     fn error(self: Box<Self>, error: &dyn fmt::Display) {
-        self.parent.report_error(error, Some(&self.bench_id));
+        self.parent.report_error(Some(&self.bench_id), error);
     }
 }
 
@@ -385,27 +426,28 @@ where
     W: io::Write + fmt::Debug + Send + 'static,
 {
     fn error(&mut self, error: &dyn fmt::Display) {
-        self.report_error(error, None);
+        self.report_error(None, error);
     }
 
     fn new_test(&mut self, id: &BenchmarkId) -> Box<dyn super::TestReporter> {
         Box::new(TestReporter {
             parent: self.clone(),
-            test_id: self.format_id(id),
+            test_id: id.clone(),
             started_at: Instant::now(),
         })
     }
 
     fn new_benchmark(&mut self, id: &BenchmarkId) -> Box<dyn super::BenchmarkReporter> {
-        let bench_id = self.format_id(id);
         if self.verbosity >= Verbosity::Verbose {
-            self.lock_printer()
-                .println(&format!("Benchmarking {bench_id}: started"));
+            let mut printer = self.lock_printer();
+            printer.print_str("Benchmarking ");
+            printer.print_id(id);
+            printer.print(format_args!(": started\n"));
         }
 
         Box::new(BenchmarkReporter {
             parent: self.clone(),
-            bench_id,
+            bench_id: id.clone(),
             started_at: None,
         })
     }
@@ -450,9 +492,12 @@ mod tests {
     use crate::cachegrind::{CachegrindDataPoint, FullCachegrindStats};
 
     fn mock_reporter() -> PrintingReporter<Vec<u8>> {
-        let line_printer = LinePrinter(vec![]);
-        PrintingReporter {
+        let line_printer = LinePrinter {
+            inner: vec![],
             styling: false,
+            style_nesting: 0,
+        };
+        PrintingReporter {
             verbosity: Verbosity::Normal,
             line_printer: Arc::new(Mutex::new(line_printer)),
         }
@@ -460,7 +505,7 @@ mod tests {
 
     fn extract_buffer(reporter: PrintingReporter<Vec<u8>>) -> String {
         let buffer = Arc::into_inner(reporter.line_printer).unwrap();
-        let buffer = buffer.into_inner().unwrap().0;
+        let buffer = buffer.into_inner().unwrap().inner;
         String::from_utf8(buffer).unwrap()
     }
 

@@ -92,10 +92,10 @@ impl MainBencher {
         if matches!(mode, BenchModeData::Bench { .. }) {
             match cachegrind::check() {
                 Ok(version) => {
-                    reporter.report_debug(&format!("Using cachegrind with version {version}"));
+                    reporter.report_debug(format_args!("Using cachegrind with version {version}"));
                 }
                 Err(err) => {
-                    reporter.report_error(&err, None);
+                    reporter.report_error(None, &err);
                     process::exit(1);
                 }
             }
