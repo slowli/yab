@@ -10,7 +10,9 @@ use std::{
     time::Instant,
 };
 
-use anes::{Attribute, Color, ResetAttributes, SetAttribute, SetForegroundColor};
+use anes::{
+    Attribute, Color, ResetAttributes, SetAttribute, SetBackgroundColor, SetForegroundColor,
+};
 
 use super::{BenchmarkOutput, Reporter};
 use crate::{
@@ -18,7 +20,19 @@ use crate::{
     BenchmarkId, FullCachegrindStats,
 };
 
-const DIFF_WIDTH: usize = 10;
+/// Full width of the label column.
+const LABEL_WIDTH: usize = 15;
+/// Full width of the number column.
+const NUMBER_WIDTH: usize = 16;
+/// Width of the diff column (not including percentages).
+const DIFF_WIDTH: usize = 12;
+
+#[derive(Debug, Clone, Copy)]
+enum Checkmark {
+    InProgress,
+    Pass,
+    Fail,
+}
 
 #[derive(Debug)]
 struct Styled<'a, W: io::Write>(&'a mut LinePrinter<W>);
@@ -75,9 +89,16 @@ impl<W: io::Write> LinePrinter<W> {
             .expect("I/O error writing to stderr");
     }
 
-    fn colored(&mut self, color: Color) -> Styled<'_, W> {
+    fn fg(&mut self, color: Color) -> Styled<'_, W> {
         if self.styling {
             self.print(format_args!("{}", SetForegroundColor(color)));
+        }
+        self.borrow()
+    }
+
+    fn bg(&mut self, color: Color) -> Styled<'_, W> {
+        if self.styling {
+            self.print(format_args!("{}", SetBackgroundColor(color)));
         }
         self.borrow()
     }
@@ -96,23 +117,43 @@ impl<W: io::Write> LinePrinter<W> {
         self.borrow()
     }
 
+    fn print_checkbox(&mut self, mark: Checkmark) {
+        self.print_str("[");
+        match mark {
+            Checkmark::InProgress => self.fg(Color::Cyan).print_str("*"),
+            Checkmark::Pass => self.bold().fg(Color::Green).print_str("√"),
+            Checkmark::Fail => self.bold().fg(Color::Red).print_str("x"),
+        }
+        self.print_str("] ");
+    }
+
     fn print_debug(&mut self, args: fmt::Arguments<'_>) {
-        self.bold().colored(Color::DarkMagenta).print_str("DEBUG:");
+        self.bold()
+            .bg(Color::DarkMagenta)
+            .fg(Color::White)
+            .print_str("DEBUG:");
         self.print(format_args!(" {args}\n"));
     }
 
     fn print_warning(&mut self, id: &BenchmarkId, args: fmt::Arguments<'_>) {
-        self.bold().colored(Color::DarkMagenta).print_str("WARN:");
+        self.bold()
+            .bg(Color::Yellow)
+            .fg(Color::White)
+            .print_str(" WARN:");
         self.print_str(" ");
         self.print_id(id);
-        self.print(format_args!(" {args}\n"));
+        self.print(format_args!(": {args}\n"));
     }
 
     fn print_error(&mut self, id: Option<&BenchmarkId>, args: fmt::Arguments<'_>) {
-        self.bold().colored(Color::DarkMagenta).print_str("ERROR:");
+        self.bold()
+            .bg(Color::Red)
+            .fg(Color::White)
+            .print_str("ERROR:");
         if let Some(id) = id {
             self.print_str(" ");
             self.print_id(id);
+            self.print_str(":");
         }
         self.print(format_args!(" {args}\n"));
     }
@@ -136,15 +177,15 @@ impl<W: io::Write> LinePrinter<W> {
     fn print_diff(&mut self, new: u64, old: u64) {
         match new.cmp(&old) {
             Ordering::Less => {
-                self.colored(Color::Green).print(format_args!(
-                    "{:>+DIFF_WIDTH$} ({:+.2}%)",
+                self.fg(Color::Green).print(format_args!(
+                    " {:>+DIFF_WIDTH$} ({:+.2}%)",
                     new as i64 - old as i64,
                     (old - new) as f32 * -100.0 / old as f32
                 ));
             }
             Ordering::Greater => {
-                self.colored(Color::Red).print(format_args!(
-                    "{:>+DIFF_WIDTH$} ({:+.2}%)",
+                self.fg(Color::Red).print(format_args!(
+                    " {:>+DIFF_WIDTH$} ({:+.2}%)",
                     new - old,
                     (new - old) as f32 * 100.0 / old as f32
                 ));
@@ -154,20 +195,26 @@ impl<W: io::Write> LinePrinter<W> {
     }
 
     fn print_row(&mut self, label: &str, last: bool, new: u64, old: Option<u64>) {
+        const ROW_LABEL_WIDTH: usize = LABEL_WIDTH - 2;
+
         let line = if last { '└' } else { '├' };
-        self.print(format_args!("{line} {label:<12}: {new:>15}"));
+        self.print(format_args!(
+            "{line} {label:<ROW_LABEL_WIDTH$} {new:>NUMBER_WIDTH$}"
+        ));
         if let Some(old) = old {
-            self.print_str(" ");
             self.print_diff(new, old);
         }
         self.print_str("\n");
     }
 
     fn print_detail_row(&mut self, label: &str, last: bool, new: u64, old: Option<u64>) {
+        const DETAIL_LABEL_WIDTH: usize = LABEL_WIDTH - 4;
+
         let line = if last { '└' } else { '├' };
-        self.print(format_args!("│ {line} {label:<10}: {new:>15}"));
+        self.print(format_args!(
+            "│ {line} {label:<DETAIL_LABEL_WIDTH$} {new:>NUMBER_WIDTH$}"
+        ));
         if let Some(old) = old {
-            self.print_str(" ");
             self.print_diff(new, old);
         }
         self.print_str("\n");
@@ -190,10 +237,10 @@ impl<W: io::Write> LinePrinter<W> {
             );
         }
         if print_reads {
-            self.print_detail_row("Data read", !print_writes, new.data_reads, old_data_reads);
+            self.print_detail_row("Data reads", !print_writes, new.data_reads, old_data_reads);
         }
         if print_writes {
-            self.print_detail_row("Data write", true, new.data_writes, old_data_writes);
+            self.print_detail_row("Data writes", true, new.data_writes, old_data_writes);
         }
     }
 }
@@ -271,20 +318,18 @@ pub(crate) struct TestReporter<W> {
 impl<W: io::Write> super::TestReporter for TestReporter<W> {
     fn ok(self: Box<Self>) {
         let mut printer = self.parent.lock_printer();
-        printer.print(format_args!("Testing "));
+        printer.print_checkbox(Checkmark::Pass);
         printer.print_id(&self.test_id);
-        printer.print_str(": ");
-        printer.bold().print_str("OK");
         let latency = self.started_at.elapsed();
         printer.print(format_args!(" ({latency:?})\n"));
     }
 
     fn fail(self: Box<Self>, _: &dyn Any) {
         let mut printer = self.parent.lock_printer();
-        printer.print(format_args!("Testing "));
+        printer.print_checkbox(Checkmark::Fail);
         printer.print_id(&self.test_id);
         printer.print_str(": ");
-        printer.bold().colored(Color::Red).print_str("FAILED");
+        printer.bold().fg(Color::Red).print_str("FAILED");
         printer.print_str("\n");
     }
 }
@@ -373,7 +418,7 @@ impl<W: io::Write + fmt::Debug + Send> super::BenchmarkReporter for BenchmarkRep
         }
 
         let mut printer = self.parent.lock_printer();
-        printer.print_str("Benchmarking ");
+        printer.print_checkbox(Checkmark::InProgress);
         printer.print_id(&self.bench_id);
         let instr = stats.total_instructions();
         printer.print(format_args!(": captured baseline ({instr} instructions)\n"));
@@ -383,10 +428,8 @@ impl<W: io::Write + fmt::Debug + Send> super::BenchmarkReporter for BenchmarkRep
         let BenchmarkOutput { stats, prev_stats } = output;
 
         let mut printer = self.parent.lock_printer();
-        printer.print_str("Benchmarking ");
+        printer.print_checkbox(Checkmark::Pass);
         printer.print_id(&self.bench_id);
-        printer.print_str(": ");
-        printer.bold().print_str("OK");
         if let Some(started_at) = self.started_at {
             let latency = started_at.elapsed();
             printer.dimmed().print(format_args!(" ({latency:?})"));
@@ -440,7 +483,7 @@ where
     fn new_benchmark(&mut self, id: &BenchmarkId) -> Box<dyn super::BenchmarkReporter> {
         if self.verbosity >= Verbosity::Verbose {
             let mut printer = self.lock_printer();
-            printer.print_str("Benchmarking ");
+            printer.print_checkbox(Checkmark::InProgress);
             printer.print_id(id);
             printer.print(format_args!(": started\n"));
         }
@@ -543,10 +586,9 @@ mod tests {
         let buffer = extract_buffer(reporter);
         let lines: Vec<_> = buffer.lines().collect();
         assert_eq!(lines.len(), 2, "{buffer}");
-        assert!(lines[0].starts_with("Benchmarking test @"), "{buffer}");
+        assert!(lines[0].starts_with("[√] test @"), "{buffer}");
         assert!(lines[0].contains("printer.rs"), "{buffer}");
-        assert!(lines[0].contains(": OK ("), "{buffer}");
-        assert_eq!(lines[1].trim(), "Instructions:             123");
+        assert_eq!(lines[1], "└ Instructions               123");
     }
 
     #[test]
@@ -564,11 +606,11 @@ mod tests {
         let buffer = extract_buffer(reporter);
         let lines: Vec<_> = buffer.lines().collect();
         assert_eq!(lines.len(), 2, "{buffer}");
-        assert!(lines[0].starts_with("Benchmarking test @"), "{buffer}");
+        assert!(lines[0].starts_with("[√] test @"), "{buffer}");
         assert!(lines[0].contains("printer.rs"), "{buffer}");
         assert_eq!(
-            lines[1].trim(),
-            "Instructions:             120             +20 (+20.00%)"
+            lines[1],
+            "└ Instructions               120          +20 (+20.00%)"
         );
     }
 
@@ -586,13 +628,13 @@ mod tests {
         let buffer = extract_buffer(reporter);
         let lines: Vec<_> = buffer.lines().collect();
         assert_eq!(lines.len(), 6, "{buffer}");
-        assert!(lines[0].starts_with("Benchmarking test @"), "{buffer}");
+        assert!(lines[0].starts_with("[√] test @"), "{buffer}");
         assert!(lines[0].contains("printer.rs"), "{buffer}");
-        assert_eq!(lines[1].trim(), "Instructions:             100");
-        assert_eq!(lines[2].trim(), "L1 hits     :             250");
-        assert_eq!(lines[3].trim(), "L2/L3 hits  :              80");
-        assert_eq!(lines[4].trim(), "RAM accesses:              20");
-        assert_eq!(lines[5].trim(), "Est. cycles :            1350");
+        assert_eq!(lines[1], "├ Instructions               100");
+        assert_eq!(lines[2], "├ L1 hits                    250");
+        assert_eq!(lines[3], "├ L2/L3 hits                  80");
+        assert_eq!(lines[4], "├ RAM accesses                20");
+        assert_eq!(lines[5], "└ Est. cycles               1350");
     }
 
     #[test]
@@ -612,27 +654,24 @@ mod tests {
         let buffer = extract_buffer(reporter);
         let lines: Vec<_> = buffer.lines().collect();
         assert_eq!(lines.len(), 6, "{buffer}");
-        assert!(lines[0].starts_with("Benchmarking test @"), "{buffer}");
+        assert!(lines[0].starts_with("[√] test @"), "{buffer}");
         assert!(lines[0].contains("printer.rs"), "{buffer}");
         assert_eq!(
-            lines[1].trim(),
-            "Instructions:             100             -10 (-9.09%)"
+            lines[1],
+            "├ Instructions               100          -10 (-9.09%)"
         );
         assert_eq!(
-            lines[2].trim(),
-            "L1 hits     :             250             -30 (-10.71%)"
+            lines[2],
+            "├ L1 hits                    250          -30 (-10.71%)"
         );
         assert_eq!(
-            lines[3].trim(),
-            "L2/L3 hits  :              80             +20 (+33.33%)"
+            lines[3],
+            "├ L2/L3 hits                  80          +20 (+33.33%)"
         );
+        assert_eq!(lines[4], "├ RAM accesses                20");
         assert_eq!(
-            lines[4].trim(),
-            "RAM accesses:              20     (no change)"
-        );
-        assert_eq!(
-            lines[5].trim(),
-            "Est. cycles :            1350             +70 (+5.47%)"
+            lines[5],
+            "└ Est. cycles               1350          +70 (+5.47%)"
         );
     }
 }
