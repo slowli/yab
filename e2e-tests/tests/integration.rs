@@ -65,7 +65,7 @@ fn testing_benchmarks() {
 
     let test_names: HashSet<_> = stderr
         .lines()
-        .filter_map(|line| line.strip_prefix("Testing ")?.split_whitespace().next())
+        .filter_map(|line| line.strip_prefix("[√] ")?.split_whitespace().next())
         .collect();
     for &name in EXPECTED_BENCH_NAMES {
         assert!(
@@ -83,7 +83,7 @@ fn testing_with_filter() {
     let stderr = String::from_utf8(output.stderr).unwrap();
     let test_names: HashSet<_> = stderr
         .lines()
-        .filter_map(|line| line.strip_prefix("Testing ")?.split_whitespace().next())
+        .filter_map(|line| line.strip_prefix("[√] ")?.split_whitespace().next())
         .collect();
     assert_eq!(test_names, HashSet::from(["fib/15", "fib/20", "fib/25"]));
 }
@@ -107,11 +107,7 @@ fn benchmarking_everything() {
 
     let benchmark_names: HashSet<_> = stderr
         .lines()
-        .filter_map(|line| {
-            line.strip_prefix("Benchmarking ")?
-                .split_whitespace()
-                .next()
-        })
+        .filter_map(|line| line.strip_prefix("[√] ")?.split_whitespace().next())
         .collect();
     for &name in EXPECTED_BENCH_NAMES {
         assert!(
@@ -139,11 +135,7 @@ fn benchmarking_everything() {
     let stderr = String::from_utf8(output.stderr).unwrap();
     let benchmark_names: HashSet<_> = stderr
         .lines()
-        .filter_map(|line| {
-            line.strip_prefix("Benchmarking ")?
-                .split_whitespace()
-                .next()
-        })
+        .filter_map(|line| line.strip_prefix("[√] ")?.split_whitespace().next())
         .collect();
     assert_eq!(benchmark_names, HashSet::from(["fib_short"]));
 
@@ -312,11 +304,7 @@ fn disabling_cache_simulation() {
     let stderr = String::from_utf8(output.stderr).unwrap();
     let benchmark_names: HashSet<_> = stderr
         .lines()
-        .filter_map(|line| {
-            line.strip_prefix("Benchmarking ")?
-                .split_whitespace()
-                .next()
-        })
+        .filter_map(|line| line.strip_prefix("[√] ")?.split_whitespace().next())
         .collect();
     for &name in EXPECTED_BENCH_NAMES {
         assert!(
