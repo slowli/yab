@@ -141,7 +141,7 @@ impl<W: io::Write> LinePrinter<W> {
             .fg(Color::White)
             .print_str(" WARN:");
         self.print_str(" ");
-        self.print_id(id);
+        self.print_id(id, true);
         self.print(format_args!(": {args}\n"));
     }
 
@@ -152,13 +152,13 @@ impl<W: io::Write> LinePrinter<W> {
             .print_str("ERROR:");
         if let Some(id) = id {
             self.print_str(" ");
-            self.print_id(id);
+            self.print_id(id, true);
             self.print_str(":");
         }
         self.print(format_args!(" {args}\n"));
     }
 
-    fn print_id(&mut self, id: &BenchmarkId) {
+    fn print_id(&mut self, id: &BenchmarkId, print_location: bool) {
         let BenchmarkId {
             name,
             args,
@@ -169,8 +169,10 @@ impl<W: io::Write> LinePrinter<W> {
         if let Some(args) = args {
             self.print(format_args!("/{args}"));
         }
-        self.dimmed()
-            .print(format_args!(" @ {}:{}", location.file(), location.line()));
+        if print_location {
+            self.dimmed()
+                .print(format_args!(" @ {}:{}", location.file(), location.line()));
+        }
     }
 
     #[allow(clippy::cast_precision_loss, clippy::cast_possible_wrap)] // fine for reporting
@@ -248,6 +250,7 @@ impl<W: io::Write> LinePrinter<W> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[allow(dead_code)] // FIXME
 pub(crate) enum Verbosity {
+    Quiet,
     Normal,
     Verbose,
 }
@@ -275,7 +278,7 @@ impl Default for PrintingReporter {
             style_nesting: 0,
         };
         Self {
-            verbosity: Verbosity::Verbose,
+            verbosity: Verbosity::Quiet,
             line_printer: Arc::new(Mutex::new(line_printer)),
         }
     }
@@ -319,7 +322,7 @@ impl<W: io::Write> super::TestReporter for TestReporter<W> {
     fn ok(self: Box<Self>) {
         let mut printer = self.parent.lock_printer();
         printer.print_checkbox(Checkmark::Pass);
-        printer.print_id(&self.test_id);
+        printer.print_id(&self.test_id, self.parent.verbosity >= Verbosity::Verbose);
         let latency = self.started_at.elapsed();
         printer.print(format_args!(" ({latency:?})\n"));
     }
@@ -327,7 +330,7 @@ impl<W: io::Write> super::TestReporter for TestReporter<W> {
     fn fail(self: Box<Self>, _: &dyn Any) {
         let mut printer = self.parent.lock_printer();
         printer.print_checkbox(Checkmark::Fail);
-        printer.print_id(&self.test_id);
+        printer.print_id(&self.test_id, self.parent.verbosity >= Verbosity::Verbose);
         printer.print_str(": ");
         printer.bold().fg(Color::Red).print_str("FAILED");
         printer.print_str("\n");
@@ -359,43 +362,45 @@ impl<W: io::Write> BenchmarkReporter<W> {
             old_summary.map(|old| old.instructions),
         );
 
-        printer.print_row(
-            "L1 hits",
-            false,
-            summary.l1_hits,
-            old_summary.map(|old| old.l1_hits),
-        );
-        if parent.verbosity >= Verbosity::Verbose {
-            printer.print_details(
-                stats.l1_hits(),
-                old_stats.as_ref().map(FullCachegrindStats::l1_hits),
+        if parent.verbosity >= Verbosity::Normal {
+            printer.print_row(
+                "L1 hits",
+                false,
+                summary.l1_hits,
+                old_summary.map(|old| old.l1_hits),
             );
-        }
+            if parent.verbosity >= Verbosity::Verbose {
+                printer.print_details(
+                    stats.l1_hits(),
+                    old_stats.as_ref().map(FullCachegrindStats::l1_hits),
+                );
+            }
 
-        printer.print_row(
-            "L2/L3 hits",
-            false,
-            summary.l3_hits,
-            old_summary.map(|old| old.l3_hits),
-        );
-        if parent.verbosity >= Verbosity::Verbose {
-            printer.print_details(
-                stats.l3_hits(),
-                old_stats.as_ref().map(FullCachegrindStats::l3_hits),
+            printer.print_row(
+                "L2/L3 hits",
+                false,
+                summary.l3_hits,
+                old_summary.map(|old| old.l3_hits),
             );
-        }
+            if parent.verbosity >= Verbosity::Verbose {
+                printer.print_details(
+                    stats.l3_hits(),
+                    old_stats.as_ref().map(FullCachegrindStats::l3_hits),
+                );
+            }
 
-        printer.print_row(
-            "RAM accesses",
-            false,
-            summary.ram_accesses,
-            old_summary.map(|old| old.ram_accesses),
-        );
-        if parent.verbosity >= Verbosity::Verbose {
-            printer.print_details(
-                stats.ram(),
-                old_stats.as_ref().map(FullCachegrindStats::ram),
+            printer.print_row(
+                "RAM accesses",
+                false,
+                summary.ram_accesses,
+                old_summary.map(|old| old.ram_accesses),
             );
+            if parent.verbosity >= Verbosity::Verbose {
+                printer.print_details(
+                    stats.ram(),
+                    old_stats.as_ref().map(FullCachegrindStats::ram),
+                );
+            }
         }
 
         printer.print_row(
@@ -419,7 +424,7 @@ impl<W: io::Write + fmt::Debug + Send> super::BenchmarkReporter for BenchmarkRep
 
         let mut printer = self.parent.lock_printer();
         printer.print_checkbox(Checkmark::InProgress);
-        printer.print_id(&self.bench_id);
+        printer.print_id(&self.bench_id, true);
         let instr = stats.total_instructions();
         printer.print(format_args!(": captured baseline ({instr} instructions)\n"));
     }
@@ -429,7 +434,7 @@ impl<W: io::Write + fmt::Debug + Send> super::BenchmarkReporter for BenchmarkRep
 
         let mut printer = self.parent.lock_printer();
         printer.print_checkbox(Checkmark::Pass);
-        printer.print_id(&self.bench_id);
+        printer.print_id(&self.bench_id, self.parent.verbosity >= Verbosity::Verbose);
         if let Some(started_at) = self.started_at {
             let latency = started_at.elapsed();
             printer.dimmed().print(format_args!(" ({latency:?})"));
@@ -484,7 +489,7 @@ where
         if self.verbosity >= Verbosity::Verbose {
             let mut printer = self.lock_printer();
             printer.print_checkbox(Checkmark::InProgress);
-            printer.print_id(id);
+            printer.print_id(id, true);
             printer.print(format_args!(": started\n"));
         }
 
@@ -534,14 +539,14 @@ mod tests {
     use super::*;
     use crate::cachegrind::{CachegrindDataPoint, FullCachegrindStats};
 
-    fn mock_reporter() -> PrintingReporter<Vec<u8>> {
+    fn mock_reporter(verbosity: Verbosity) -> PrintingReporter<Vec<u8>> {
         let line_printer = LinePrinter {
             inner: vec![],
             styling: false,
             style_nesting: 0,
         };
         PrintingReporter {
-            verbosity: Verbosity::Normal,
+            verbosity,
             line_printer: Arc::new(Mutex::new(line_printer)),
         }
     }
@@ -574,7 +579,7 @@ mod tests {
 
     #[test]
     fn reporting_basic_stats() {
-        let mut reporter = mock_reporter();
+        let mut reporter = mock_reporter(Verbosity::Normal);
         let stats = CachegrindStats::Simple { instructions: 123 };
         let mut bench = reporter.new_benchmark(&BenchmarkId::from("test"));
         bench.start_execution();
@@ -586,14 +591,14 @@ mod tests {
         let buffer = extract_buffer(reporter);
         let lines: Vec<_> = buffer.lines().collect();
         assert_eq!(lines.len(), 2, "{buffer}");
-        assert!(lines[0].starts_with("[√] test @"), "{buffer}");
-        assert!(lines[0].contains("printer.rs"), "{buffer}");
+        assert!(lines[0].starts_with("[√] test ("), "{buffer}");
+        assert!(!lines[0].contains("printer.rs"), "{buffer}");
         assert_eq!(lines[1], "└ Instructions               123");
     }
 
     #[test]
     fn reporting_basic_stats_with_diff() {
-        let mut reporter = mock_reporter();
+        let mut reporter = mock_reporter(Verbosity::Normal);
         let stats = CachegrindStats::Simple { instructions: 120 };
         let prev_stats = CachegrindStats::Simple { instructions: 100 };
         reporter
@@ -606,8 +611,7 @@ mod tests {
         let buffer = extract_buffer(reporter);
         let lines: Vec<_> = buffer.lines().collect();
         assert_eq!(lines.len(), 2, "{buffer}");
-        assert!(lines[0].starts_with("[√] test @"), "{buffer}");
-        assert!(lines[0].contains("printer.rs"), "{buffer}");
+        assert_eq!(lines[0], "[√] test");
         assert_eq!(
             lines[1],
             "└ Instructions               120          +20 (+20.00%)"
@@ -616,7 +620,7 @@ mod tests {
 
     #[test]
     fn reporting_full_stats() {
-        let mut reporter = mock_reporter();
+        let mut reporter = mock_reporter(Verbosity::Normal);
         let stats = CachegrindStats::Full(mock_stats());
         reporter
             .new_benchmark(&BenchmarkId::from("test"))
@@ -628,8 +632,7 @@ mod tests {
         let buffer = extract_buffer(reporter);
         let lines: Vec<_> = buffer.lines().collect();
         assert_eq!(lines.len(), 6, "{buffer}");
-        assert!(lines[0].starts_with("[√] test @"), "{buffer}");
-        assert!(lines[0].contains("printer.rs"), "{buffer}");
+        assert_eq!(lines[0], "[√] test");
         assert_eq!(lines[1], "├ Instructions               100");
         assert_eq!(lines[2], "├ L1 hits                    250");
         assert_eq!(lines[3], "├ L2/L3 hits                  80");
@@ -638,8 +641,40 @@ mod tests {
     }
 
     #[test]
+    fn reporting_full_stats_verbosely() {
+        let mut reporter = mock_reporter(Verbosity::Verbose);
+        let stats = CachegrindStats::Full(mock_stats());
+        reporter
+            .new_benchmark(&BenchmarkId::from("test"))
+            .ok(&BenchmarkOutput {
+                stats,
+                prev_stats: None,
+            });
+
+        let buffer = extract_buffer(reporter);
+        let lines: Vec<_> = buffer.lines().collect();
+        assert!(lines.len() > 10, "{buffer}");
+        assert!(lines[0].starts_with("[*] test @"), "{buffer}");
+        assert!(lines[0].contains("printer.rs"));
+        assert!(lines[1].starts_with("[√] test @"), "{buffer}");
+        assert_eq!(lines[2], "├ Instructions               100");
+        assert_eq!(lines[3], "├ L1 hits                    250");
+        assert_eq!(lines[4], "│ ├ Instr.                    80");
+        assert_eq!(lines[5], "│ ├ Data reads               160");
+        assert_eq!(lines[6], "│ └ Data writes               10");
+
+        let ram_idx = lines
+            .iter()
+            .position(|&line| line == "├ RAM accesses                20")
+            .unwrap();
+        assert_eq!(lines[ram_idx + 1], "│ ├ Instr.                    10");
+        assert_eq!(lines[ram_idx + 2], "│ └ Data reads                10");
+        assert_eq!(*lines.last().unwrap(), "└ Est. cycles               1350");
+    }
+
+    #[test]
     fn reporting_full_stats_with_diff() {
-        let mut reporter = mock_reporter();
+        let mut reporter = mock_reporter(Verbosity::Normal);
         let stats = CachegrindStats::Full(mock_stats());
         let mut prev_stats = mock_stats();
         prev_stats.instructions.total += 10;
@@ -654,8 +689,7 @@ mod tests {
         let buffer = extract_buffer(reporter);
         let lines: Vec<_> = buffer.lines().collect();
         assert_eq!(lines.len(), 6, "{buffer}");
-        assert!(lines[0].starts_with("[√] test @"), "{buffer}");
-        assert!(lines[0].contains("printer.rs"), "{buffer}");
+        assert_eq!(lines[0], "[√] test");
         assert_eq!(
             lines[1],
             "├ Instructions               100          -10 (-9.09%)"
