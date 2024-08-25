@@ -3,9 +3,7 @@
 use std::{
     any::Any,
     cmp::Ordering,
-    fmt, io,
-    io::IsTerminal,
-    ops,
+    fmt, io, ops,
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -248,7 +246,6 @@ impl<W: io::Write> LinePrinter<W> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[allow(dead_code)] // FIXME
 pub(crate) enum Verbosity {
     Quiet,
     Normal,
@@ -270,21 +267,19 @@ impl<W> Clone for PrintingReporter<W> {
     }
 }
 
-impl Default for PrintingReporter {
-    fn default() -> Self {
+impl PrintingReporter {
+    pub(crate) fn new(styling: bool, verbosity: Verbosity) -> Self {
         let line_printer = LinePrinter {
             inner: io::stderr(),
-            styling: io::stderr().is_terminal(),
+            styling,
             style_nesting: 0,
         };
         Self {
-            verbosity: Verbosity::Quiet,
+            verbosity,
             line_printer: Arc::new(Mutex::new(line_printer)),
         }
     }
-}
 
-impl PrintingReporter {
     pub fn report_list_item(id: &BenchmarkId) {
         println!("{id}: benchmark");
     }

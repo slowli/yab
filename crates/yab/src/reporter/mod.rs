@@ -5,7 +5,10 @@ use std::{any::Any, fmt};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-pub(crate) use self::{printer::PrintingReporter, seq::SeqReporter};
+pub(crate) use self::{
+    printer::{PrintingReporter, Verbosity},
+    seq::SeqReporter,
+};
 use crate::{BenchmarkId, CachegrindStats};
 
 mod printer;

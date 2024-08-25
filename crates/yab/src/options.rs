@@ -1,8 +1,12 @@
-use std::{env, num, num::NonZeroUsize, process, process::Command};
+use std::{env, io, io::IsTerminal, num, num::NonZeroUsize, process, process::Command};
 
-use clap::Parser;
+use clap::{ColorChoice, Parser};
 
-use crate::{bencher::BenchMode, reporter::PrintingReporter, BenchmarkId};
+use crate::{
+    bencher::BenchMode,
+    reporter::{PrintingReporter, Verbosity},
+    BenchmarkId,
+};
 
 const DEFAULT_CACHEGRIND_WRAPPER: &[&str] = &[
     "setarch",
@@ -46,6 +50,16 @@ pub(crate) struct BenchOptions {
     #[arg(long, short = 'j', default_value_t = NonZeroUsize::new(num_cpus::get().max(1)).unwrap())]
     pub jobs: NonZeroUsize,
 
+    /// Sets coloring of the program output.
+    #[arg(long, env = "COLOR", default_value_t = ColorChoice::Auto)]
+    pub color: ColorChoice,
+    /// Output detailed benchmarking information.
+    #[arg(long)]
+    pub verbose: bool,
+    /// Output only basic benchmarking information.
+    #[arg(long, short = 'q', conflicts_with = "verbose")]
+    pub quiet: bool,
+
     /// List all benchmarks instead of running them.
     #[arg(long, conflicts_with = "print")]
     list: bool,
@@ -84,6 +98,24 @@ impl BenchOptions {
             BenchMode::Bench
         } else {
             BenchMode::Test
+        }
+    }
+
+    pub fn styling(&self) -> bool {
+        match self.color {
+            ColorChoice::Always => true,
+            ColorChoice::Never => false,
+            ColorChoice::Auto => io::stderr().is_terminal(),
+        }
+    }
+
+    pub fn verbosity(&self) -> Verbosity {
+        if self.quiet {
+            Verbosity::Quiet
+        } else if self.verbose {
+            Verbosity::Verbose
+        } else {
+            Verbosity::Normal
         }
     }
 
