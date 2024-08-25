@@ -1,6 +1,6 @@
 # Yet Another Benchmarking framework powered by cachegrind
 
-[![Build Status](https://github.com/slowli/yab/workflows/CI/badge.svg?branch=main)](https://github.com/slowli/yab/actions)
+[![CI](https://github.com/slowli/yab/actions/workflows/ci.yml/badge.svg)](https://github.com/slowli/yab/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue)](https://github.com/slowli/yab#license)
 ![rust 1.75+ required](https://img.shields.io/badge/rust-1.75+-blue.svg?label=Required%20Rust)
 

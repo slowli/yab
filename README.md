@@ -1,6 +1,6 @@
 # Yet Another Benchmarking framework for Rust
 
-[![Build Status](https://github.com/slowli/yab/workflows/CI/badge.svg?branch=main)](https://github.com/slowli/yab/actions)
+[![CI](https://github.com/slowli/yab/actions/workflows/ci.yml/badge.svg)](https://github.com/slowli/yab/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue)](https://github.com/slowli/yab#license)
 
 YAB is **Y**et **A**nother **B**enchmarking framework powered by [`cachegrind`] from the Valgrind tool suite.
