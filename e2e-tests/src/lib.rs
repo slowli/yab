@@ -29,7 +29,7 @@ impl Drop for FibGuard {
 }
 
 pub fn main(bencher: &mut Bencher) {
-    bencher.set_processor(BenchmarkExporter::default());
+    bencher.add_reporter(BenchmarkExporter::default());
     bencher
         .bench("fib_short", || fibonacci(black_box(10)))
         .bench("fib_long", || fibonacci(black_box(30)));

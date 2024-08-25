@@ -78,7 +78,7 @@ impl From<String> for ParseError {
     }
 }
 
-pub(crate) fn check() -> Result<(), CachegrindError> {
+pub(crate) fn check() -> Result<String, CachegrindError> {
     let output = Command::new("valgrind")
         .args(["--tool=cachegrind", "--version"])
         .output()
@@ -86,8 +86,11 @@ pub(crate) fn check() -> Result<(), CachegrindError> {
     if !output.status.success() {
         return Err(CachegrindError::NoCachegrind);
     }
-    // FIXME: check version
-    Ok(())
+    let version = String::from_utf8(output.stdout).map_err(|err| {
+        let err = io::Error::new(io::ErrorKind::Other, err);
+        CachegrindError::Exec(err)
+    })?;
+    Ok(version.trim().to_owned())
 }
 
 #[derive(Debug)]
@@ -125,6 +128,7 @@ pub(crate) fn spawn_instrumented(args: SpawnArgs) -> Result<CachegrindStats, Cac
     };
     options.push_args(&mut command);
 
+    // FIXME: capture output?
     let status = command
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -133,7 +137,7 @@ pub(crate) fn spawn_instrumented(args: SpawnArgs) -> Result<CachegrindStats, Cac
     if !status.success() {
         let err = io::Error::new(
             io::ErrorKind::Other,
-            format!("Failed running cachegrind, exit code: {status}"),
+            format!("Failed running cachegrind, {status}"),
         );
         return Err(CachegrindError::Exec(err));
     }
@@ -157,6 +161,16 @@ pub struct CachegrindDataPoint {
     pub l1_misses: u64,
     /// Number of operations that have missed L2/L3 caches.
     pub l3_misses: u64,
+}
+
+impl CachegrindDataPoint {
+    pub(crate) fn l1_hits(&self) -> u64 {
+        self.total - self.l1_misses
+    }
+
+    pub(crate) fn l3_hits(&self) -> u64 {
+        self.l1_misses - self.l3_misses
+    }
 }
 
 impl ops::Sub for CachegrindDataPoint {
