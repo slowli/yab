@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CachegrindStats"],"fn":["black_box"],"macro":["main"],"mod":["reporter"],"struct":["AccessSummary","Bencher","BenchmarkId","Capture","CaptureGuard","FullCachegrindStats"]};
