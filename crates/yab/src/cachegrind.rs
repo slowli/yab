@@ -3,12 +3,12 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
-    fs, io,
+    fmt, fs, io,
     io::BufRead,
     ops,
     path::Path,
     process,
-    process::{Command, Stdio},
+    process::{Command, ExitStatus},
 };
 
 #[cfg(feature = "serde")]
@@ -16,10 +16,44 @@ use serde::{Deserialize, Serialize};
 
 use crate::{options::CachegrindOptions, BenchmarkId};
 
+#[derive(Debug)]
+pub(crate) struct ExecFailure {
+    status: ExitStatus,
+    stdout: String,
+    stderr: String,
+}
+
+impl ExecFailure {
+    fn new(output: &process::Output) -> Self {
+        Self {
+            status: output.status,
+            stdout: String::from_utf8_lossy(&output.stdout).trim().to_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+        }
+    }
+}
+
+impl fmt::Display for ExecFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}", self.status)?;
+        if !self.stdout.is_empty() {
+            writeln!(formatter, "\n---- cachegrind stdout ----\n{}", self.stdout)?;
+        }
+        if !self.stderr.is_empty() {
+            writeln!(formatter, "\n---- cachegrind stderr ----\n{}", self.stderr)?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for ExecFailure {}
+
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum CachegrindError {
     #[error("I/O error executing cachegrind: {0}")]
     Exec(#[source] io::Error),
+    #[error("cachegrind exited abnormally: {0}")]
+    ExecFailure(#[from] ExecFailure),
     #[error(
         "Unable to get `cachegrind` version. Please make sure that `valgrind` is installed \
          and is on PATH"
@@ -128,18 +162,9 @@ pub(crate) fn spawn_instrumented(args: SpawnArgs) -> Result<CachegrindStats, Cac
     };
     options.push_args(&mut command);
 
-    // FIXME: capture output?
-    let status = command
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map_err(CachegrindError::Exec)?;
-    if !status.success() {
-        let err = io::Error::new(
-            io::ErrorKind::Other,
-            format!("Failed running cachegrind, {status}"),
-        );
-        return Err(CachegrindError::Exec(err));
+    let output = command.output().map_err(CachegrindError::Exec)?;
+    if !output.status.success() {
+        return Err(ExecFailure::new(&output).into());
     }
 
     let out = fs::File::open(out_path).map_err(|error| CachegrindError::Read {
