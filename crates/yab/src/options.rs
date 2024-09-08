@@ -29,10 +29,11 @@ pub(crate) struct BenchOptions {
     bench: bool,
 
     /// Wrapper to call `cachegrind` as. Beware that changing params will likely render results not comparable.
-    /// `{OUT}` will be replaced with the path to the output file.
     #[arg(
         long,
         alias = "cg",
+        env = "CACHEGRIND_WRAPPER",
+        value_delimiter = ':',
         default_values_t = DEFAULT_CACHEGRIND_WRAPPER.iter().copied().map(str::to_owned)
     )]
     cachegrind_wrapper: Vec<String>,
