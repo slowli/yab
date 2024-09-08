@@ -56,6 +56,7 @@ common options are:
 - `--print`: prints results of the latest run instead of running benchmarks.
 - `--jobs N` / `-j N`: specifies the number of benchmarks to run in parallel. By default, it's equal
   to the number of logical CPUs in the system.
+- `--verbose`, `--quiet`: increases or decreases verbosity of benchmarking output.
 
 ### Examples
 

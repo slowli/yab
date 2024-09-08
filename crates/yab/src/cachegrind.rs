@@ -153,7 +153,6 @@ pub(crate) fn spawn_instrumented(args: SpawnArgs) -> Result<CachegrindStats, Cac
 /// Information about a particular type of operations (instruction reads, data reads / writes).
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[non_exhaustive]
 pub struct CachegrindDataPoint {
     /// Total number of operations performed.
     pub total: u64,
@@ -173,6 +172,18 @@ impl CachegrindDataPoint {
     }
 }
 
+impl ops::Add for CachegrindDataPoint {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            total: self.total + rhs.total,
+            l1_misses: self.l1_misses + rhs.l1_misses,
+            l3_misses: self.l3_misses + rhs.l3_misses,
+        }
+    }
+}
+
 impl ops::Sub for CachegrindDataPoint {
     type Output = Self;
 
@@ -185,10 +196,21 @@ impl ops::Sub for CachegrindDataPoint {
     }
 }
 
+impl ops::Mul<u64> for CachegrindDataPoint {
+    type Output = Self;
+
+    fn mul(self, rhs: u64) -> Self::Output {
+        Self {
+            total: self.total * rhs,
+            l1_misses: self.l1_misses * rhs,
+            l3_misses: self.l3_misses * rhs,
+        }
+    }
+}
+
 /// Full `cachegrind` stats including cache simulation.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[non_exhaustive]
 pub struct FullCachegrindStats {
     /// Instruction-related statistics.
     pub instructions: CachegrindDataPoint,
@@ -226,6 +248,18 @@ fn summary_from_map(map: &HashMap<&str, u64>, key: &str) -> Result<u64, ParseErr
         .ok_or_else(|| format!("missing summary for event `{key}`").into())
 }
 
+impl ops::Add for FullCachegrindStats {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            instructions: self.instructions + rhs.instructions,
+            data_reads: self.data_reads + rhs.data_reads,
+            data_writes: self.data_writes + rhs.data_writes,
+        }
+    }
+}
+
 impl ops::Sub for FullCachegrindStats {
     type Output = Self;
 
@@ -234,6 +268,18 @@ impl ops::Sub for FullCachegrindStats {
             instructions: self.instructions - rhs.instructions,
             data_reads: self.data_reads - rhs.data_reads,
             data_writes: self.data_writes - rhs.data_writes,
+        }
+    }
+}
+
+impl ops::Mul<u64> for FullCachegrindStats {
+    type Output = Self;
+
+    fn mul(self, rhs: u64) -> Self::Output {
+        Self {
+            instructions: self.instructions * rhs,
+            data_reads: self.data_reads * rhs,
+            data_writes: self.data_reads * rhs,
         }
     }
 }
