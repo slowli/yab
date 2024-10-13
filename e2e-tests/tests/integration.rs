@@ -9,14 +9,22 @@ use std::{
 };
 
 use once_cell::sync::Lazy;
+use serde::Deserialize;
 use yab::{reporter::BenchmarkOutput, AccessSummary, CachegrindStats, FullCachegrindStats};
 use yab_e2e_tests::EXPORTER_OUTPUT_VAR;
 
 const EXE_PATH: &str = env!("CARGO_BIN_EXE_yab-e2e-tests");
+const MOCK_CACHEGRIND_PATH: &str = env!("CARGO_BIN_EXE_mock-cachegrind");
+
+#[derive(Debug, Deserialize)]
+struct AllStats {
+    default: HashMap<String, FullCachegrindStats>,
+}
+
 // Because benchmarked functions are simple, hopefully the snapshot won't depend much on architecture,
 // Rust compiler version etc.
-static EXPECTED_STATS: Lazy<HashMap<String, FullCachegrindStats>> =
-    Lazy::new(|| serde_json::from_str(include_str!("snapshots/all-stats.json")).unwrap());
+static EXPECTED_STATS: Lazy<AllStats> =
+    Lazy::new(|| serde_json::from_str(include_str!("../src/bin/all-stats.json")).unwrap());
 
 const EXPECTED_BENCH_NAMES: &[&str] = &[
     "fib_short",
@@ -24,8 +32,8 @@ const EXPECTED_BENCH_NAMES: &[&str] = &[
     "fib/15",
     "fib/20",
     "fib/25",
-    "fib_guard",
-    "fib_setup",
+    "fib_capture",
+    "guard",
     "random_walk/1000000",
     "random_walk/10000000",
 ];
@@ -58,9 +66,8 @@ fn assert_close_values(actual: u64, expected: u64) {
 fn testing_benchmarks() {
     // Without `--bench` argument, benches should be tested.
     let output = Command::new(EXE_PATH).output().unwrap();
-    assert!(output.status.success());
-
     let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(output.status.success(), "{stderr}");
     assert!(!stderr.contains('\u{1b}')); // no ANSI escape sequences since stderr is not a TTY
 
     let test_names: HashSet<_> = stderr
@@ -168,7 +175,7 @@ fn assert_initial_outputs(outputs: &HashMap<String, BenchmarkOutput>) {
         long_stats.total_instructions() > 10 * short_stats.total_instructions(),
         "long={long_stats:?}, short={short_stats:?}"
     );
-    let guard_stats = &outputs["fib_guard"].stats;
+    let guard_stats = &outputs["guard"].stats;
     assert!(
         long_stats.total_instructions() > 10 * guard_stats.total_instructions(),
         "guard={guard_stats:?}, long={long_stats:?}"
@@ -180,7 +187,8 @@ fn assert_initial_outputs(outputs: &HashMap<String, BenchmarkOutput>) {
     assert!(long_random_walk_output.ram_accesses > 1_000);
 
     if !cfg!(debug_assertions) {
-        for (name, expected_stats) in &*EXPECTED_STATS {
+        for (name, expected_stats) in &EXPECTED_STATS.default {
+            println!("Comparing bench {name}");
             let actual_stats = outputs[name].stats.as_full().unwrap();
             assert_close(actual_stats, expected_stats);
         }
@@ -199,6 +207,51 @@ fn assert_new_outputs(
         short_output.stats.as_full().unwrap(),
         expected_old_stats.as_full().unwrap(),
     );
+}
+
+#[test]
+fn benchmarking_everything_with_mock_cachegrind() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let out_path = temp_dir.path().join("out.json");
+    let target_path = temp_dir.path().join("target");
+
+    let output = Command::new(EXE_PATH)
+        .arg("--bench")
+        .env(EXPORTER_OUTPUT_VAR, &out_path)
+        .env("CACHEGRIND_WRAPPER", MOCK_CACHEGRIND_PATH)
+        .env("CACHEGRIND_OUT_DIR", &target_path)
+        .output()
+        .expect("failed running benches");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(output.status.success(), "{stderr}");
+
+    let outputs = read_outputs(&out_path);
+    // Check that outputs exactly math the sampled ones
+    for (name, expected_stats) in &EXPECTED_STATS.default {
+        let actual_stats = outputs[name].stats.as_full().unwrap();
+        assert_eq!(actual_stats, expected_stats);
+    }
+}
+
+#[test]
+fn benchmarking_with_mock_cachegrind_and_custom_profile() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let out_path = temp_dir.path().join("out.json");
+    let target_path = temp_dir.path().join("target");
+
+    let mock_cachegrind = format!("{MOCK_CACHEGRIND_PATH}:--profile=comparison");
+    let output = Command::new(EXE_PATH)
+        .args(["--bench", "fib_short"])
+        .env(EXPORTER_OUTPUT_VAR, &out_path)
+        .env("CACHEGRIND_WRAPPER", &mock_cachegrind)
+        .env("CACHEGRIND_OUT_DIR", &target_path)
+        .output()
+        .expect("failed running benches");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(output.status.success(), "{stderr}");
+
+    let outputs = read_outputs(&out_path);
+    assert_eq!(outputs["fib_short"].stats.total_instructions(), 1_739);
 }
 
 #[test]
@@ -229,7 +282,7 @@ fn printing_benchmark_results() {
         .lines()
         .filter(|line| line.contains("no data for benchmark"))
         .count();
-    assert_eq!(benchmarks_without_data, 5); // `fib/` and `random_walk/` benches
+    assert_eq!(benchmarks_without_data, 7); // `fib/`, `guard` and `random_walk/` benches
 
     // Check that only outputs for benches that have already been run are supplied to the processor.
     let outputs = read_outputs(&out_path);
@@ -274,6 +327,7 @@ fn using_custom_job_count() {
 
         let outputs = read_outputs(&out_path);
         for (name, output) in outputs {
+            println!("Comparing bench {name}");
             let stats = output.stats.as_full().unwrap();
             let initial_stats = &initial_outputs[&name].stats;
             let initial_stats = initial_stats.as_full().unwrap();
@@ -330,14 +384,15 @@ fn disabling_cache_simulation() {
         "short={short_instructions}, long={long_instructions}"
     );
 
-    let guard_instructions = outputs["fib_guard"].stats.total_instructions();
+    let guard_instructions = outputs["guard"].stats.total_instructions();
     assert!(
         guard_instructions.abs_diff(short_instructions) < 10,
         "short={short_instructions}, guard={guard_instructions}"
     );
 
     if !cfg!(debug_assertions) {
-        for (name, expected_stats) in &*EXPECTED_STATS {
+        for (name, expected_stats) in &EXPECTED_STATS.default {
+            println!("Comparing bench {name}");
             let expected_instructions = expected_stats.instructions.total;
             let actual_instructions = outputs[name].stats.total_instructions();
             assert_close_values(actual_instructions, expected_instructions);
