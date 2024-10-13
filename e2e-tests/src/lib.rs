@@ -1,7 +1,11 @@
 // Linter settings.
 #![warn(missing_debug_implementations, bare_trait_objects)]
 #![warn(clippy::all, clippy::pedantic)]
-#![allow(clippy::must_use_candidate, clippy::module_name_repetitions)]
+#![allow(
+    clippy::must_use_candidate,
+    clippy::module_name_repetitions,
+    clippy::missing_panics_doc
+)]
 
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use yab::{black_box, Bencher, BenchmarkId};
@@ -38,17 +42,18 @@ pub fn main(bencher: &mut Bencher) {
         bencher.bench(id, || fibonacci(black_box(n)));
     }
 
-    bencher.bench_with_capture("fib_setup", |capture| {
+    bencher.bench_with_capture("fib_capture", |capture| {
         black_box(fibonacci(black_box(30)));
-        capture.measure(|| fibonacci(black_box(20)));
+        let output = capture.measure(|| fibonacci(black_box(10)));
+        assert_eq!(output, 89);
     });
 
     // Dropping the guard should not be measured
-    bencher.bench("fib_guard", || {
+    bencher.bench("guard", || {
         fibonacci(black_box(10));
         FibGuard(20)
     });
-    bencher.bench_with_capture("fib_guard_explicit", |capture| {
+    bencher.bench_with_capture("guard/explicit", |capture| {
         capture.measure(|| {
             fibonacci(black_box(10));
             FibGuard(20)

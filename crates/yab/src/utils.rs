@@ -14,6 +14,7 @@ impl Drop for SemaphoreGuard {
 /// cachegrind-instrumented executables.
 #[derive(Debug)]
 pub(crate) struct Semaphore {
+    capacity: usize,
     permits: Mutex<usize>,
     cvar: Condvar,
 }
@@ -21,9 +22,14 @@ pub(crate) struct Semaphore {
 impl Semaphore {
     pub fn new(permits: usize) -> Self {
         Self {
+            capacity: permits,
             permits: Mutex::new(permits),
             cvar: Condvar::new(),
         }
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.capacity
     }
 
     pub fn acquire_owned(self: &Arc<Self>) -> SemaphoreGuard {

@@ -1,0 +1,210 @@
+{
+  "default": {
+    "fib/25": {
+      "instructions": {
+        "total": 2363794,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 364187,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 485578,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    },
+    "guard": {
+      "instructions": {
+        "total": 1746,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 275,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 362,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    },
+    "fib_capture": {
+      "instructions": {
+        "total": 1746,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 275,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 362,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    },
+    "fib/15": {
+      "instructions": {
+        "total": 19232,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 2969,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 3954,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    },
+    "fib_short": {
+      "instructions": {
+        "total": 1745,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 274,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 362,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    },
+    "fib/20": {
+      "instructions": {
+        "total": 213155,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 32846,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 43790,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    },
+    "random_walk/10000000": {
+      "instructions": {
+        "total": 1800023,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 300009,
+        "l1_misses": 99963,
+        "l3_misses": 11352
+      },
+      "data_writes": {
+        "total": 200007,
+        "l1_misses": 1,
+        "l3_misses": 0
+      }
+    },
+    "fib_long": {
+      "instructions": {
+        "total": 26214745,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 4038814,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 5385082,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    },
+    "random_walk/1000000": {
+      "instructions": {
+        "total": 1800023,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 300009,
+        "l1_misses": 99563,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 200007,
+        "l1_misses": 1,
+        "l3_misses": 0
+      }
+    },
+    "guard/explicit": {
+      "instructions": {
+        "total": 1746,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 275,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 362,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    }
+  },
+  "comparison": {
+    "fib_short": {
+      "instructions": {
+        "total": 1739,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 280,
+        "l1_misses": 3,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 374,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    },
+    "random_walk/10000000": {
+      "instructions": {
+        "total": 1770011,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 280009,
+        "l1_misses": 99985,
+        "l3_misses": 11309
+      },
+      "data_writes": {
+        "total": 190007,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    }
+  }
+}

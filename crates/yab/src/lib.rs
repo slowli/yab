@@ -132,7 +132,10 @@ pub use std::hint::black_box;
 
 pub use crate::{
     bencher::Bencher,
-    cachegrind::{AccessSummary, CachegrindStats, Capture, CaptureGuard, FullCachegrindStats},
+    cachegrind::{
+        AccessSummary, CachegrindDataPoint, CachegrindStats, Capture, CaptureGuard,
+        FullCachegrindStats,
+    },
     id::BenchmarkId,
 };
 

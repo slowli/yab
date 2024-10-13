@@ -29,10 +29,11 @@ pub(crate) struct BenchOptions {
     bench: bool,
 
     /// Wrapper to call `cachegrind` as. Beware that changing params will likely render results not comparable.
-    /// `{OUT}` will be replaced with the path to the output file.
     #[arg(
         long,
         alias = "cg",
+        env = "CACHEGRIND_WRAPPER",
+        value_delimiter = ':',
         default_values_t = DEFAULT_CACHEGRIND_WRAPPER.iter().copied().map(str::to_owned)
     )]
     cachegrind_wrapper: Vec<String>,
@@ -47,7 +48,12 @@ pub(crate) struct BenchOptions {
     #[arg(long, default_value = "target/yab", env = "CACHEGRIND_OUT_DIR")]
     pub cachegrind_out_dir: String,
     /// Maximum number of benchmarks to run in parallel.
-    #[arg(long, short = 'j', default_value_t = NonZeroUsize::new(num_cpus::get().max(1)).unwrap())]
+    #[arg(
+        long,
+        short = 'j',
+        env = "CACHEGRIND_JOBS",
+        default_value_t = NonZeroUsize::new(num_cpus::get().max(1)).unwrap()
+    )]
     pub jobs: NonZeroUsize,
 
     /// Sets coloring of the program output.
