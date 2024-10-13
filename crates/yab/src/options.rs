@@ -48,7 +48,12 @@ pub(crate) struct BenchOptions {
     #[arg(long, default_value = "target/yab", env = "CACHEGRIND_OUT_DIR")]
     pub cachegrind_out_dir: String,
     /// Maximum number of benchmarks to run in parallel.
-    #[arg(long, short = 'j', default_value_t = NonZeroUsize::new(num_cpus::get().max(1)).unwrap())]
+    #[arg(
+        long,
+        short = 'j',
+        env = "CACHEGRIND_JOBS",
+        default_value_t = NonZeroUsize::new(num_cpus::get().max(1)).unwrap()
+    )]
     pub jobs: NonZeroUsize,
 
     /// Sets coloring of the program output.
