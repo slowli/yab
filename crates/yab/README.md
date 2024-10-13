@@ -97,6 +97,14 @@ fn benchmarks(bencher: &mut Bencher) {
 yab::main!(benchmarks);
 ```
 
+Here's sample benchmark output:
+
+![Basic benchmark output](examples/basic.svg)
+
+More verbose output with `--verbose` option also showcasing changes to the benchmarked function:
+
+![Verbose benchmark output](examples/verbose.svg)
+
 ## Limitations
 
 - `cachegrind` has somewhat limited platform support (e.g., doesn't support Windows).
