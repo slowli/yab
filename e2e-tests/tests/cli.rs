@@ -62,9 +62,8 @@ fn transform_output<'a>(output_lines: impl Iterator<Item = &'a str>) -> String {
     let mut should_output_line = false;
     let mut buffer = String::new();
     for line in output_lines {
-        dbg!(line);
         let current_output_line = should_output_line;
-        if line.contains("Running benches/all.rs") {
+        if line.contains("Running") && line.contains("benches/all.rs") {
             should_output_line = true;
         }
         if !current_output_line {
