@@ -140,11 +140,17 @@ impl MainBencher {
                     reporter: self.reporter.new_benchmark(&id),
                     id,
                 };
-                let jobs_semaphore = jobs_semaphore.clone();
-                jobs.push(thread::spawn(move || {
-                    let _permit = jobs_semaphore.acquire_owned();
+
+                if jobs_semaphore.capacity() == 1 {
+                    // Run the executor synchronously in order to have deterministic ordering
                     executor.run_benchmark();
-                }));
+                } else {
+                    let jobs_semaphore = jobs_semaphore.clone();
+                    jobs.push(thread::spawn(move || {
+                        let _permit = jobs_semaphore.acquire_owned();
+                        executor.run_benchmark();
+                    }));
+                }
             }
             BenchModeData::List => {
                 PrintingReporter::report_list_item(&id);
