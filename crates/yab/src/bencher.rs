@@ -11,11 +11,17 @@ use crate::{
     BenchmarkId, CachegrindStats, Capture,
 };
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum BenchMode {
+/// Mode in which the bencher is currently executing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum BenchMode {
+    /// Testing the benchmark code. Enabled by running benchmarks via `cargo test`.
     Test,
+    /// Collecting benchmark data (i.e., the main / default mode).
     Bench,
+    /// Listing benchmark names. Enabled by specifying `--list` command-line arg.
     List,
+    /// Printing benchmark results collected during previous runs. Enabled by specifying `--print` command-line arg.
     PrintResults,
 }
 
@@ -45,6 +51,15 @@ impl BenchModeData {
             },
             BenchMode::List => Self::List,
             BenchMode::PrintResults => Self::PrintResults,
+        }
+    }
+
+    fn mode(&self) -> BenchMode {
+        match self {
+            Self::Test { .. } => BenchMode::Test,
+            Self::Bench { .. } => BenchMode::Bench,
+            Self::List => BenchMode::List,
+            Self::PrintResults => BenchMode::PrintResults,
         }
     }
 }
@@ -79,6 +94,7 @@ impl Drop for MainBencher {
             }
             _ => { /* no special handling required */ }
         }
+        mem::take(&mut self.reporter).ok_all();
     }
 }
 
@@ -336,12 +352,21 @@ impl Default for Bencher {
 }
 
 impl Bencher {
+    /// Adds a reporter to the bencher. Beware that bencher initialization may skew benchmark results.
     #[doc(hidden)] // not stable yet
     pub fn add_reporter(&mut self, reporter: impl Reporter + 'static) -> &mut Self {
         if let BencherInner::Main(bencher) = &mut self.inner {
             bencher.reporter.0.push(Box::new(reporter));
         }
         self
+    }
+
+    /// Gets the benchmarking mode.
+    pub fn mode(&self) -> BenchMode {
+        match &self.inner {
+            BencherInner::Main(bencher) => bencher.mode.mode(),
+            BencherInner::Cachegrind(_) => BenchMode::Bench,
+        }
     }
 
     /// Benchmarks a single function. Dropping the output won't be included into the captured stats.

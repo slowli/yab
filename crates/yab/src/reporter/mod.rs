@@ -29,6 +29,7 @@ pub struct BenchmarkOutput {
 #[allow(unused_variables)]
 pub trait Reporter: fmt::Debug {
     /// Reports a (non-recoverable) error not related to a particular benchmark.
+    /// This is mutually exclusive with [`Self::ok()`].
     ///
     /// The default implementation does nothing.
     fn error(&mut self, error: &dyn fmt::Display) {
@@ -43,6 +44,14 @@ pub trait Reporter: fmt::Debug {
     /// Initializes a benchmark with the specified ID. Note that the benchmark isn't necessarily
     /// immediately started; the start will be signaled separately via [`BenchmarkReporter::start_execution()`].
     fn new_benchmark(&mut self, id: &BenchmarkId) -> Box<dyn BenchmarkReporter>;
+
+    /// Signals to the reporter that processing tests / benchmarks has successfully completed.
+    /// This is mutually exclusive with [`Self::error()`].
+    ///
+    /// The default implementation does nothing.
+    fn ok(self: Box<Self>) {
+        // do nothing
+    }
 }
 
 /// Reporter of events for a single benchmark run in the test mode.
