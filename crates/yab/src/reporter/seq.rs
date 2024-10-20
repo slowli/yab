@@ -5,8 +5,16 @@ use std::{any::Any, fmt::Display};
 use super::{BenchmarkOutput, BenchmarkReporter, Reporter, TestReporter};
 use crate::{BenchmarkId, CachegrindStats};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct SeqReporter(pub Vec<Box<dyn Reporter>>);
+
+impl SeqReporter {
+    pub fn ok_all(self) {
+        for reporter in self.0 {
+            reporter.ok();
+        }
+    }
+}
 
 impl Reporter for SeqReporter {
     fn error(&mut self, error: &dyn Display) {

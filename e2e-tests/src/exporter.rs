@@ -32,10 +32,8 @@ impl Reporter for BenchmarkExporter {
 
         Box::new(Entry(self.outputs.clone(), id.to_string()))
     }
-}
 
-impl Drop for BenchmarkExporter {
-    fn drop(&mut self) {
+    fn ok(self: Box<Self>) {
         let Ok(out_path) = env::var(EXPORTER_OUTPUT_VAR) else {
             return;
         };

@@ -79,6 +79,7 @@ impl Drop for MainBencher {
             }
             _ => { /* no special handling required */ }
         }
+        mem::take(&mut self.reporter).ok_all();
     }
 }
 
