@@ -5,7 +5,7 @@ use std::{env, fs, mem, panic, process, sync::Arc, thread, thread::JoinHandle};
 use crate::{
     cachegrind,
     cachegrind::SpawnArgs,
-    options::{BenchOptions, CachegrindOptions, Options},
+    options::{BenchOptions, CachegrindOptions, IdMatcher, Options},
     reporter::{BenchmarkOutput, BenchmarkReporter, PrintingReporter, Reporter, SeqReporter},
     utils::Semaphore,
     BenchmarkId, CachegrindStats, Capture,
@@ -68,6 +68,7 @@ impl BenchModeData {
 #[derive(Debug)]
 struct MainBencher {
     options: BenchOptions,
+    id_matcher: IdMatcher,
     mode: BenchModeData,
     reporter: SeqReporter,
 }
@@ -117,15 +118,24 @@ impl MainBencher {
             }
         }
 
+        let id_matcher = match options.id_matcher() {
+            Ok(matcher) => matcher,
+            Err(err) => {
+                reporter.report_error(None, &err);
+                process::exit(1);
+            }
+        };
+
         Self {
+            options,
+            id_matcher,
             mode,
             reporter: SeqReporter(vec![Box::new(reporter)]),
-            options,
         }
     }
 
     fn bench<T>(&mut self, id: BenchmarkId, mut bench_fn: impl FnMut(Capture) -> T) {
-        if !self.options.should_run(&id) {
+        if !self.id_matcher.matches(&id) {
             return;
         }
 

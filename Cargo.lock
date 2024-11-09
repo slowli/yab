@@ -1160,6 +1160,7 @@ dependencies = [
  "crabgrind",
  "doc-comment",
  "num_cpus",
+ "regex",
  "serde",
  "serde_json",
  "thiserror",
