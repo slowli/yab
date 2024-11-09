@@ -96,6 +96,28 @@ fn testing_with_filter() {
 }
 
 #[test]
+fn testing_with_regex_filter() {
+    let output = Command::new(EXE_PATH).arg("/\\d+$").output().unwrap();
+    assert!(output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let test_names: HashSet<_> = stderr
+        .lines()
+        .filter_map(|line| line.strip_prefix("[√] ")?.split_whitespace().next())
+        .collect();
+    assert_eq!(
+        test_names,
+        HashSet::from([
+            "fib/15",
+            "fib/20",
+            "fib/25",
+            "random_walk/1000000",
+            "random_walk/10000000"
+        ])
+    );
+}
+
+#[test]
 fn benchmarking_everything() {
     let temp_dir = tempfile::TempDir::new().unwrap();
     let out_path = temp_dir.path().join("out.json");
