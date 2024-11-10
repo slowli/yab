@@ -6,6 +6,8 @@ use std::{
     fs, io,
     path::Path,
     process::{Command, Stdio},
+    thread,
+    time::Duration,
 };
 
 use once_cell::sync::Lazy;
@@ -248,7 +250,50 @@ fn benchmarking_everything_with_mock_cachegrind() {
     assert!(output.status.success(), "{stderr}");
 
     let outputs = read_outputs(&out_path);
-    // Check that outputs exactly math the sampled ones
+    // Check that outputs exactly match the sampled ones
+    for (name, expected_stats) in &EXPECTED_STATS.default {
+        let actual_stats = outputs[name].stats.as_full().unwrap();
+        assert_eq!(actual_stats, expected_stats);
+    }
+
+    test_handling_interrupts(&temp_dir);
+}
+
+fn test_handling_interrupts(temp_dir: &tempfile::TempDir) {
+    let out_path = temp_dir.path().join("out.json");
+    let target_path = temp_dir.path().join("target");
+
+    let mock_cachegrind = format!("{MOCK_CACHEGRIND_PATH}:--emulate-hang-up");
+    let mut output = Command::new(EXE_PATH)
+        .arg("--bench")
+        .env(EXPORTER_OUTPUT_VAR, &out_path)
+        .env("CACHEGRIND_WRAPPER", &mock_cachegrind)
+        .env("CACHEGRIND_OUT_DIR", &target_path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("failed spawning bench");
+
+    // Check that the benches have hanged up.
+    thread::sleep(Duration::from_secs(1));
+    assert!(
+        output.try_wait().unwrap().is_none(),
+        "benches did not hang up"
+    );
+    output.kill().unwrap();
+
+    // Print the bench results and check that there's no garbage.
+    let output = Command::new(EXE_PATH)
+        .arg("--print")
+        .env(EXPORTER_OUTPUT_VAR, &out_path)
+        .env("CACHEGRIND_WRAPPER", MOCK_CACHEGRIND_PATH)
+        .env("CACHEGRIND_OUT_DIR", &target_path)
+        .output()
+        .expect("failed running benches");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(output.status.success(), "{stderr}");
+
+    let outputs = read_outputs(&out_path);
     for (name, expected_stats) in &EXPECTED_STATS.default {
         let actual_stats = outputs[name].stats.as_full().unwrap();
         assert_eq!(actual_stats, expected_stats);
