@@ -4,7 +4,7 @@
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue)](https://github.com/slowli/yab#license)
 ![rust 1.75+ required](https://img.shields.io/badge/rust-1.75+-blue.svg?label=Required%20Rust)
 
-**Documentation:**
+**Documentation:** [![Docs.rs](https://img.shields.io/docsrs/yab.svg)](https://docs.rs/yab/)
 [![crate docs (main)](https://img.shields.io/badge/main-yellow.svg?label=docs)](https://slowli.github.io/yab/yab/)
 
 YAB is **Y**et **A**nother **B**enchmarking framework powered by [`cachegrind`] from the Valgrind tool suite.
