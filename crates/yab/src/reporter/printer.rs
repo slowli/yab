@@ -425,7 +425,12 @@ impl<W: io::Write + fmt::Debug + Send> super::BenchmarkReporter for BenchmarkRep
     }
 
     fn ok(self: Box<Self>, output: &BenchmarkOutput) {
-        let BenchmarkOutput { stats, prev_stats } = output;
+        let BenchmarkOutput {
+            stats,
+            breakdown,
+            prev_stats,
+        } = output;
+        dbg!(breakdown);
 
         let mut printer = self.parent.lock_printer();
         printer.print_checkbox(Checkmark::Pass);
@@ -531,6 +536,8 @@ impl FullCachegrindStats {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
     use crate::cachegrind::{CachegrindDataPoint, FullCachegrindStats};
 
@@ -580,6 +587,7 @@ mod tests {
         bench.start_execution();
         bench.ok(&BenchmarkOutput {
             stats,
+            breakdown: HashMap::new(),
             prev_stats: None,
         });
 
@@ -600,6 +608,7 @@ mod tests {
             .new_benchmark(&BenchmarkId::from("test"))
             .ok(&BenchmarkOutput {
                 stats,
+                breakdown: HashMap::new(),
                 prev_stats: Some(prev_stats),
             });
 
@@ -621,6 +630,7 @@ mod tests {
             .new_benchmark(&BenchmarkId::from("test"))
             .ok(&BenchmarkOutput {
                 stats,
+                breakdown: HashMap::new(),
                 prev_stats: None,
             });
 
@@ -643,6 +653,7 @@ mod tests {
             .new_benchmark(&BenchmarkId::from("test"))
             .ok(&BenchmarkOutput {
                 stats,
+                breakdown: HashMap::new(),
                 prev_stats: None,
             });
 
@@ -678,6 +689,7 @@ mod tests {
             .new_benchmark(&BenchmarkId::from("test"))
             .ok(&BenchmarkOutput {
                 stats,
+                breakdown: HashMap::new(),
                 prev_stats: Some(CachegrindStats::Full(prev_stats)),
             });
 
