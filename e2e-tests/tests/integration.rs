@@ -322,6 +322,28 @@ fn benchmarking_with_mock_cachegrind_and_custom_profile() {
 }
 
 #[test]
+fn handling_panics_in_benches() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let target_path = temp_dir.path().join("target");
+
+    let mock_cachegrind = format!("{MOCK_CACHEGRIND_PATH}:--emulate-panic");
+    let output = Command::new(EXE_PATH)
+        .arg("--bench")
+        .env("CACHEGRIND_WRAPPER", &mock_cachegrind)
+        .env("CACHEGRIND_OUT_DIR", &target_path)
+        .output()
+        .expect("failed running benches");
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(!output.status.success(), "{stderr}");
+
+    // Check that `stderr` contains actionable output.
+    assert!(stderr.contains("cachegrind exited abnormally"), "{stderr}");
+    assert!(stderr.contains("thread 'main' panicked at"), "{stderr}");
+    assert!(stderr.contains("emulated panic!"), "{stderr}");
+}
+
+#[test]
 fn printing_benchmark_results() {
     let temp_dir = tempfile::TempDir::new().unwrap();
     let out_path = temp_dir.path().join("out.json");

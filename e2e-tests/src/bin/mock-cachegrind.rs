@@ -71,6 +71,11 @@ impl AllStats {
 }
 
 fn main() {
+    let emulate_panic = env::args().any(|arg| arg == "--emulate-panic");
+    if emulate_panic {
+        panic!("emulated panic!");
+    }
+
     let profile = env::args().find_map(|arg| Some(arg.strip_prefix("--profile=")?.to_owned()));
 
     let mut args = env::args().skip(1);
