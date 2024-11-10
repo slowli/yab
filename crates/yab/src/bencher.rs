@@ -226,16 +226,19 @@ impl CachegrindRunner {
     ///    `(n + 1) * setup + (n + 1) * bench + const`.
     /// 4. Subtract baseline stats from the full stats. The difference is equal to `bench`.
     fn run_benchmark(mut self) {
-        let baseline_path = format!(
+        let final_baseline_path = format!(
             "{}/{}.baseline.cachegrind",
             self.options.cachegrind_out_dir, self.id
         );
-        let full_path = format!("{}/{}.cachegrind", self.options.cachegrind_out_dir, self.id);
-        let old_baseline = self.load_and_backup_summary(&baseline_path);
+        let final_full_path = format!("{}/{}.cachegrind", self.options.cachegrind_out_dir, self.id);
+        let old_baseline = self.load_and_backup_summary(&final_baseline_path);
         let prev_stats = old_baseline.and_then(|baseline| {
-            let full = self.load_and_backup_summary(&full_path)?;
+            let full = self.load_and_backup_summary(&final_full_path)?;
             Some(full - baseline)
         });
+
+        let baseline_path = format!("{final_baseline_path}~");
+        let full_path = format!("{final_full_path}~");
 
         // Use `baseline_path` in case we won't run the baseline after calibration
         let command = self.options.cachegrind_wrapper(&baseline_path);
@@ -281,6 +284,15 @@ impl CachegrindRunner {
         });
         let full = unwrap_summary!(self.reporter, cachegrind_result);
         let stats = full - baseline;
+
+        // (Almost) atomically move cachegrind files to their final locations, so that the following benchmark runs
+        // don't output nonsense if the benchmark is interrupted. There's still a risk that the baseline file
+        // will get updated and the full output will be not, but it's significantly lower.
+        let io_result = fs::rename(&baseline_path, &final_baseline_path);
+        unwrap_summary!(self.reporter, io_result);
+        let io_result = fs::rename(&full_path, &final_full_path);
+        unwrap_summary!(self.reporter, io_result);
+
         self.reporter.ok(&BenchmarkOutput { stats, prev_stats });
     }
 
