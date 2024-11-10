@@ -83,6 +83,8 @@ jobs:
         run: cargo clippy -p yab --no-default-features --lib
       - name: Clippy (serde)
         run: cargo clippy -p yab --features=serde --lib
+      - name: Check dependencies
+        run: cargo deny --workspace --all-features check
 
       - name: Run benchmarks
         run: cargo bench --workspace --all-features

@@ -20,6 +20,7 @@ clap = { workspace = true, features = ["derive", "env", "wrap_help"] }
 crabgrind = { workspace = true, optional = true }
 anes.workspace = true
 num_cpus.workspace = true
+regex.workspace = true
 thiserror.workspace = true
 
 # Enables serialization for benchmark outputs.

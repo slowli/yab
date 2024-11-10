@@ -1,6 +1,7 @@
 use std::{env, io, io::IsTerminal, num, num::NonZeroUsize, process, process::Command};
 
 use clap::{ColorChoice, Parser};
+use regex::Regex;
 
 use crate::{
     bencher::BenchMode,
@@ -75,7 +76,7 @@ pub(crate) struct BenchOptions {
     /// Match benchmark names exactly.
     #[arg(long)]
     exact: bool,
-    /// Skip benchmarks whose names do not contain FILTER.
+    /// Skip benchmarks whose names do not match FILTER (a regular expression).
     #[arg(name = "FILTER")]
     filter: Option<String>,
 }
@@ -125,17 +126,12 @@ impl BenchOptions {
         }
     }
 
-    pub fn should_run(&self, id: &BenchmarkId) -> bool {
-        let id_string = id.to_string();
-        if self.exact {
-            self.filter
-                .as_ref()
-                .map_or(false, |filter| *filter == id_string)
-        } else {
-            self.filter
-                .as_ref()
-                .map_or(true, |filter| id_string.contains(filter))
-        }
+    pub fn id_matcher(&self) -> Result<IdMatcher, regex::Error> {
+        Ok(match &self.filter {
+            None => IdMatcher::Any,
+            Some(str) if self.exact => IdMatcher::Exact(str.clone()),
+            Some(re) => IdMatcher::Regex(Regex::new(re)?),
+        })
     }
 
     pub fn cachegrind_wrapper(&self, out_file: &str) -> Command {
@@ -205,6 +201,23 @@ impl CachegrindOptions {
             is_baseline,
             id,
         }))
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum IdMatcher {
+    Any,
+    Exact(String),
+    Regex(Regex),
+}
+
+impl IdMatcher {
+    pub fn matches(&self, id: &BenchmarkId) -> bool {
+        match self {
+            Self::Any => true,
+            Self::Exact(s) => *s == id.to_string(),
+            Self::Regex(regex) => regex.is_match(&id.to_string()),
+        }
     }
 }
 

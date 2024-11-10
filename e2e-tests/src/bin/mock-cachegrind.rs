@@ -4,6 +4,8 @@ use std::{
     collections::HashMap,
     env, fs,
     io::{self, Write as _},
+    thread,
+    time::Duration,
 };
 
 use serde::Deserialize;
@@ -69,6 +71,11 @@ impl AllStats {
 }
 
 fn main() {
+    let emulate_panic = env::args().any(|arg| arg == "--emulate-panic");
+    if emulate_panic {
+        panic!("emulated panic!");
+    }
+
     let profile = env::args().find_map(|arg| Some(arg.strip_prefix("--profile=")?.to_owned()));
 
     let mut args = env::args().skip(1);
@@ -98,6 +105,12 @@ fn main() {
         bench_stats * (iter_count - 1) + CONST_OVERHEAD + ITER_OVERHEAD * iter_count;
     if !is_baseline {
         full_stats = full_stats + bench_stats;
+    }
+
+    // This emulates hanging up after collecting initial stats.
+    let emulate_hang_up = env::args().any(|arg| arg == "--emulate-hang-up");
+    if emulate_hang_up && (iter_count > 2 || !is_baseline) {
+        thread::sleep(Duration::MAX);
     }
 
     let file = fs::File::create(&out_file_path).expect("failed creating output file");
