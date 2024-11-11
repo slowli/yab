@@ -2,7 +2,9 @@
 
 use std::{
     any::Any,
+    cmp,
     cmp::Ordering,
+    collections::HashMap,
     fmt, io, ops,
     sync::{Arc, Mutex},
     time::Instant,
@@ -14,7 +16,7 @@ use anes::{
 
 use super::{BenchmarkOutput, Reporter};
 use crate::{
-    cachegrind::{AccessSummary, CachegrindStats},
+    cachegrind::{AccessSummary, CachegrindFunction, CachegrindStats},
     BenchmarkId, FullCachegrindStats,
 };
 
@@ -207,12 +209,19 @@ impl<W: io::Write> LinePrinter<W> {
         self.print_str("\n");
     }
 
-    fn print_detail_row(&mut self, label: &str, last: bool, new: u64, old: Option<u64>) {
+    fn print_detail_row(
+        &mut self,
+        outer_line: char,
+        label: &str,
+        last: bool,
+        new: u64,
+        old: Option<u64>,
+    ) {
         const DETAIL_LABEL_WIDTH: usize = LABEL_WIDTH - 4;
 
         let line = if last { '└' } else { '├' };
         self.print(format_args!(
-            "│ {line} {label:<DETAIL_LABEL_WIDTH$} {new:>NUMBER_WIDTH$}"
+            "{outer_line} {line} {label:<DETAIL_LABEL_WIDTH$} {new:>NUMBER_WIDTH$}"
         ));
         if let Some(old) = old {
             self.print_diff(new, old);
@@ -230,6 +239,7 @@ impl<W: io::Write> LinePrinter<W> {
 
         if print_instr {
             self.print_detail_row(
+                '│',
                 "Instr.",
                 !print_reads && !print_writes,
                 new.instructions,
@@ -237,10 +247,16 @@ impl<W: io::Write> LinePrinter<W> {
             );
         }
         if print_reads {
-            self.print_detail_row("Data reads", !print_writes, new.data_reads, old_data_reads);
+            self.print_detail_row(
+                '│',
+                "Data reads",
+                !print_writes,
+                new.data_reads,
+                old_data_reads,
+            );
         }
         if print_writes {
-            self.print_detail_row("Data writes", true, new.data_writes, old_data_writes);
+            self.print_detail_row('│', "Data writes", true, new.data_writes, old_data_writes);
         }
     }
 }
@@ -340,6 +356,30 @@ struct BenchmarkReporter<W> {
 }
 
 impl<W: io::Write> BenchmarkReporter<W> {
+    fn print_diff(
+        &self,
+        printer: &mut LinePrinter<W>,
+        stats: CachegrindStats,
+        prev_stats: Option<CachegrindStats>,
+    ) {
+        let (stats, prev_stats) = match (stats, prev_stats) {
+            (CachegrindStats::Simple { instructions }, _) => {
+                let old_instructions = prev_stats.as_ref().map(CachegrindStats::total_instructions);
+                printer.print_row("Instructions", true, instructions, old_instructions);
+                return;
+            }
+            (_, Some(CachegrindStats::Simple { instructions: old })) => {
+                printer.print_row("Instructions", true, stats.total_instructions(), Some(old));
+                return;
+            }
+            (CachegrindStats::Full(stats), None) => (stats, None),
+            (CachegrindStats::Full(stats), Some(CachegrindStats::Full(old_stats))) => {
+                (stats, Some(old_stats))
+            }
+        };
+        self.full_diff(printer, stats, prev_stats);
+    }
+
     fn full_diff(
         &self,
         printer: &mut LinePrinter<W>,
@@ -430,7 +470,6 @@ impl<W: io::Write + fmt::Debug + Send> super::BenchmarkReporter for BenchmarkRep
             breakdown,
             prev_stats,
         } = output;
-        dbg!(breakdown);
 
         let mut printer = self.parent.lock_printer();
         printer.print_checkbox(Checkmark::Pass);
@@ -441,23 +480,12 @@ impl<W: io::Write + fmt::Debug + Send> super::BenchmarkReporter for BenchmarkRep
         }
         printer.print_str("\n");
 
-        let (stats, prev_stats) = match (*stats, *prev_stats) {
-            (CachegrindStats::Simple { instructions }, _) => {
-                let old_instructions = prev_stats.as_ref().map(CachegrindStats::total_instructions);
-                printer.print_row("Instructions", true, instructions, old_instructions);
-                return;
-            }
-            (_, Some(CachegrindStats::Simple { instructions: old })) => {
-                printer.print_row("Instructions", true, stats.total_instructions(), Some(old));
-                return;
-            }
-            (CachegrindStats::Full(stats), None) => (stats, None),
-            (CachegrindStats::Full(stats), Some(CachegrindStats::Full(old_stats))) => {
-                (stats, Some(old_stats))
-            }
-        };
+        self.print_diff(&mut printer, *stats, *prev_stats);
 
-        self.full_diff(&mut printer, stats, prev_stats);
+        // FIXME: configurable?
+        let threshold = stats.total_instructions() / 100;
+        let breakdown = BreakdownList::new(breakdown, threshold);
+        breakdown.print(&mut printer, stats);
     }
 
     fn warning(&mut self, warning: &dyn fmt::Display) {
@@ -530,6 +558,43 @@ impl FullCachegrindStats {
             instructions: self.instructions.l3_misses,
             data_reads: self.data_reads.l3_misses,
             data_writes: self.data_writes.l3_misses,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct BreakdownListItem {
+    current: CachegrindStats,
+}
+
+#[derive(Debug)]
+struct BreakdownList<'a>(Vec<(&'a CachegrindFunction, BreakdownListItem)>);
+
+impl<'a> BreakdownList<'a> {
+    fn new(breakdown: &'a HashMap<CachegrindFunction, CachegrindStats>, threshold: u64) -> Self {
+        let filtered = breakdown.iter().filter_map(|(function, stats)| {
+            (stats.total_instructions() >= threshold)
+                .then_some((function, BreakdownListItem { current: *stats }))
+        });
+        let mut filtered: Vec<_> = filtered.collect();
+        filtered.sort_unstable_by_key(|(_, item)| cmp::Reverse(item.current.total_instructions()));
+        Self(filtered)
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    fn print<W: io::Write>(&self, printer: &mut LinePrinter<W>, totals: &CachegrindStats) {
+        if self.0.is_empty() {
+            return;
+        }
+
+        for (function, item) in &self.0 {
+            let instr = item.current.total_instructions();
+            let percentage = instr as f32 / totals.total_instructions() as f32 * 100.0;
+            printer
+                .fg(Color::Yellow)
+                .print(format_args!("► [{percentage:4>.1}%]"));
+            printer.print(format_args!(" {function}\n"));
+            printer.print_detail_row(' ', "Instruction", true, instr, None);
         }
     }
 }
