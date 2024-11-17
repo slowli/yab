@@ -137,12 +137,6 @@ pub(crate) struct SpawnArgs<'a> {
     pub is_baseline: bool,
 }
 
-#[derive(Debug)]
-pub(crate) struct CachegrindOutput {
-    pub stats: CachegrindStats,
-    pub breakdown: HashMap<CachegrindFunction, CachegrindStats>,
-}
-
 pub(crate) fn spawn_instrumented(args: SpawnArgs) -> Result<CachegrindOutput, CachegrindError> {
     let SpawnArgs {
         mut command,
@@ -376,6 +370,15 @@ impl CachegrindStats {
     }
 }
 
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub struct CachegrindOutput {
+    pub summary: CachegrindStats,
+    #[cfg_attr(feature = "serde", serde(skip))] // FIXME
+    pub breakdown: HashMap<CachegrindFunction, CachegrindStats>,
+}
+
 impl CachegrindOutput {
     pub(crate) fn new(file: fs::File, path: &str) -> Result<Self, CachegrindError> {
         let reader = io::BufReader::new(file);
@@ -468,7 +471,10 @@ impl CachegrindOutput {
         } else {
             CachegrindStats::Full(FullCachegrindStats::read(&summary_by_event)?)
         };
-        Ok(Self { stats, breakdown })
+        Ok(Self {
+            summary: stats,
+            breakdown,
+        })
     }
 }
 
@@ -485,7 +491,7 @@ impl ops::Sub for CachegrindOutput {
             (!diff.is_zero()).then_some((function, diff))
         });
         Self {
-            stats: self.stats - rhs.stats,
+            summary: self.summary - rhs.summary,
             breakdown: breakdown_diff.collect(),
         }
     }
@@ -661,7 +667,7 @@ mod tests {
             summary: 1234";
         let output = CachegrindOutput::read(output.as_bytes()).unwrap();
         assert_matches!(
-            output.stats,
+            output.summary,
             CachegrindStats::Simple { instructions } if instructions == 1_234
         );
     }
@@ -677,7 +683,7 @@ mod tests {
             summary: 662469 1899 1843 143129 3638 2694 89043 1330 1210\n
         ";
         let output = CachegrindOutput::read(output.as_bytes()).unwrap();
-        let stats = output.stats.as_full().unwrap();
+        let stats = output.summary.as_full().unwrap();
         assert_full_stats(stats);
 
         let breakdown = output.breakdown;

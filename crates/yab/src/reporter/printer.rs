@@ -4,7 +4,6 @@ use std::{
     any::Any,
     cmp,
     cmp::Ordering,
-    collections::HashMap,
     fmt, io, ops,
     sync::{Arc, Mutex},
     time::Instant,
@@ -16,7 +15,7 @@ use anes::{
 
 use super::{BenchmarkOutput, Reporter};
 use crate::{
-    cachegrind::{AccessSummary, CachegrindFunction, CachegrindStats},
+    cachegrind::{AccessSummary, CachegrindFunction, CachegrindOutput, CachegrindStats},
     BenchmarkId, FullCachegrindStats,
 };
 
@@ -465,11 +464,7 @@ impl<W: io::Write + fmt::Debug + Send> super::BenchmarkReporter for BenchmarkRep
     }
 
     fn ok(self: Box<Self>, output: &BenchmarkOutput) {
-        let BenchmarkOutput {
-            stats,
-            breakdown,
-            prev_stats,
-        } = output;
+        let BenchmarkOutput { stats, prev_stats } = output;
 
         let mut printer = self.parent.lock_printer();
         printer.print_checkbox(Checkmark::Pass);
@@ -480,12 +475,15 @@ impl<W: io::Write + fmt::Debug + Send> super::BenchmarkReporter for BenchmarkRep
         }
         printer.print_str("\n");
 
-        self.print_diff(&mut printer, *stats, *prev_stats);
+        self.print_diff(
+            &mut printer,
+            stats.summary,
+            prev_stats.as_ref().map(|stats| stats.summary),
+        );
 
-        // FIXME: configurable?
-        let threshold = stats.total_instructions() / 100;
-        let breakdown = BreakdownList::new(breakdown, threshold);
-        breakdown.print(&mut printer, stats);
+        // FIXME: configurable? or only output in verbose mode?
+        let breakdown = BreakdownList::new(stats, prev_stats.as_ref(), 0.01);
+        breakdown.print(&mut printer);
     }
 
     fn warning(&mut self, warning: &dyn fmt::Display) {
@@ -564,37 +562,85 @@ impl FullCachegrindStats {
 
 #[derive(Debug)]
 struct BreakdownListItem {
-    current: CachegrindStats,
+    current: u64,
+    prev: Option<u64>,
 }
 
 #[derive(Debug)]
-struct BreakdownList<'a>(Vec<(&'a CachegrindFunction, BreakdownListItem)>);
+struct BreakdownList<'a> {
+    items: Vec<(&'a CachegrindFunction, BreakdownListItem)>,
+    current_total: u64,
+    prev_total: Option<u64>,
+}
 
 impl<'a> BreakdownList<'a> {
-    fn new(breakdown: &'a HashMap<CachegrindFunction, CachegrindStats>, threshold: u64) -> Self {
-        let filtered = breakdown.iter().filter_map(|(function, stats)| {
-            (stats.total_instructions() >= threshold)
-                .then_some((function, BreakdownListItem { current: *stats }))
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss
+    )]
+    fn new(
+        stats: &'a CachegrindOutput,
+        prev_stats: Option<&'a CachegrindOutput>,
+        threshold_fraction: f32,
+    ) -> Self {
+        let current_total = stats.summary.total_instructions();
+        let current_threshold = (threshold_fraction * current_total as f32) as u64;
+        let prev_total = prev_stats.map(|stats| stats.summary.total_instructions());
+        let prev_threshold =
+            prev_total.map_or(u64::MAX, |instr| (threshold_fraction * instr as f32) as u64);
+
+        let filtered = stats.breakdown.iter().filter_map(|(func, stats)| {
+            let prev_instructions = prev_stats
+                .and_then(|prev| prev.breakdown.get(func))
+                .map(CachegrindStats::total_instructions);
+            let notable = stats.total_instructions() >= current_threshold
+                || prev_instructions.map_or(false, |instr| instr >= prev_threshold);
+            if !notable {
+                return None;
+            }
+
+            let item = BreakdownListItem {
+                current: stats.total_instructions(),
+                prev: prev_instructions,
+            };
+            Some((func, item))
         });
-        let mut filtered: Vec<_> = filtered.collect();
-        filtered.sort_unstable_by_key(|(_, item)| cmp::Reverse(item.current.total_instructions()));
-        Self(filtered)
+        let mut items: Vec<_> = filtered.collect();
+        items.sort_unstable_by_key(|(_, item)| cmp::Reverse((item.current, item.prev)));
+
+        Self {
+            items,
+            current_total,
+            prev_total,
+        }
     }
 
     #[allow(clippy::cast_precision_loss)]
-    fn print<W: io::Write>(&self, printer: &mut LinePrinter<W>, totals: &CachegrindStats) {
-        if self.0.is_empty() {
+    fn print<W: io::Write>(&self, printer: &mut LinePrinter<W>) {
+        if self.items.is_empty() {
             return;
         }
 
-        for (function, item) in &self.0 {
-            let instr = item.current.total_instructions();
-            let percentage = instr as f32 / totals.total_instructions() as f32 * 100.0;
+        for (function, item) in &self.items {
+            let instr = item.current;
+            let percentage = instr as f32 / self.current_total as f32 * 100.0;
+            let percentage = format!("{percentage:.1}%");
+            let prev_percentage = self.prev_total.map_or(0.0, |total| {
+                item.prev.unwrap_or(0) as f32 / total as f32 * 100.0
+            });
+            let prev_percentage = format!("{prev_percentage:.1}%");
+            let percentages = if percentage == prev_percentage {
+                percentage
+            } else {
+                format!("{prev_percentage} → {percentage}")
+            };
+
             printer
                 .fg(Color::Yellow)
-                .print(format_args!("► [{percentage:4>.1}%]"));
+                .print(format_args!("► [{percentages}]"));
             printer.print(format_args!(" {function}\n"));
-            printer.print_detail_row(' ', "Instruction", true, instr, None);
+            printer.print_detail_row(' ', "Instruction", true, instr, item.prev);
         }
     }
 }
@@ -644,15 +690,37 @@ mod tests {
         }
     }
 
+    fn with_breakdown(summary: CachegrindStats) -> CachegrindOutput {
+        let total_instructions = summary.total_instructions();
+        CachegrindOutput {
+            summary,
+            breakdown: HashMap::from([
+                (
+                    CachegrindFunction::rust(
+                        "<alloc::sync::Arc<T> as core::default::Default>::default",
+                    ),
+                    CachegrindStats::Simple {
+                        instructions: total_instructions / 10,
+                    },
+                ),
+                (
+                    CachegrindFunction::rust("yab::test"),
+                    CachegrindStats::Simple {
+                        instructions: total_instructions * 9 / 10,
+                    },
+                ),
+            ]),
+        }
+    }
+
     #[test]
     fn reporting_basic_stats() {
         let mut reporter = mock_reporter(Verbosity::Normal);
-        let stats = CachegrindStats::Simple { instructions: 123 };
+        let stats = with_breakdown(CachegrindStats::Simple { instructions: 123 });
         let mut bench = reporter.new_benchmark(&BenchmarkId::from("test"));
         bench.start_execution();
         bench.ok(&BenchmarkOutput {
             stats,
-            breakdown: HashMap::new(),
             prev_stats: None,
         });
 
@@ -667,13 +735,12 @@ mod tests {
     #[test]
     fn reporting_basic_stats_with_diff() {
         let mut reporter = mock_reporter(Verbosity::Normal);
-        let stats = CachegrindStats::Simple { instructions: 120 };
-        let prev_stats = CachegrindStats::Simple { instructions: 100 };
+        let stats = with_breakdown(CachegrindStats::Simple { instructions: 120 });
+        let prev_stats = with_breakdown(CachegrindStats::Simple { instructions: 100 });
         reporter
             .new_benchmark(&BenchmarkId::from("test"))
             .ok(&BenchmarkOutput {
                 stats,
-                breakdown: HashMap::new(),
                 prev_stats: Some(prev_stats),
             });
 
@@ -690,12 +757,11 @@ mod tests {
     #[test]
     fn reporting_full_stats() {
         let mut reporter = mock_reporter(Verbosity::Normal);
-        let stats = CachegrindStats::Full(mock_stats());
+        let stats = with_breakdown(CachegrindStats::Full(mock_stats()));
         reporter
             .new_benchmark(&BenchmarkId::from("test"))
             .ok(&BenchmarkOutput {
                 stats,
-                breakdown: HashMap::new(),
                 prev_stats: None,
             });
 
@@ -713,12 +779,11 @@ mod tests {
     #[test]
     fn reporting_full_stats_verbosely() {
         let mut reporter = mock_reporter(Verbosity::Verbose);
-        let stats = CachegrindStats::Full(mock_stats());
+        let stats = with_breakdown(CachegrindStats::Full(mock_stats()));
         reporter
             .new_benchmark(&BenchmarkId::from("test"))
             .ok(&BenchmarkOutput {
                 stats,
-                breakdown: HashMap::new(),
                 prev_stats: None,
             });
 
@@ -746,7 +811,7 @@ mod tests {
     #[test]
     fn reporting_full_stats_with_diff() {
         let mut reporter = mock_reporter(Verbosity::Normal);
-        let stats = CachegrindStats::Full(mock_stats());
+        let stats = with_breakdown(CachegrindStats::Full(mock_stats()));
         let mut prev_stats = mock_stats();
         prev_stats.instructions.total += 10;
         prev_stats.data_reads.l1_misses = 20;
@@ -754,8 +819,7 @@ mod tests {
             .new_benchmark(&BenchmarkId::from("test"))
             .ok(&BenchmarkOutput {
                 stats,
-                breakdown: HashMap::new(),
-                prev_stats: Some(CachegrindStats::Full(prev_stats)),
+                prev_stats: Some(with_breakdown(CachegrindStats::Full(prev_stats))),
             });
 
         let buffer = extract_buffer(reporter);

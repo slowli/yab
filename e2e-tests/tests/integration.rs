@@ -181,7 +181,7 @@ fn assert_initial_outputs(outputs: &HashMap<String, BenchmarkOutput>) {
     }
 
     for output in outputs.values() {
-        let stats = output.stats.as_full().unwrap();
+        let stats = output.stats.summary.as_full().unwrap();
         assert!(stats.instructions.total > 0, "{stats:?}");
         assert!(stats.data_reads.total > 0, "{stats:?}");
         assert!(stats.data_writes.total > 0, "{stats:?}");
@@ -193,19 +193,19 @@ fn assert_initial_outputs(outputs: &HashMap<String, BenchmarkOutput>) {
         assert!(output.prev_stats.is_none());
     }
 
-    let short_stats = &outputs["fib_short"].stats;
-    let long_stats = &outputs["fib_long"].stats;
+    let short_stats = &outputs["fib_short"].stats.summary;
+    let long_stats = &outputs["fib_long"].stats.summary;
     assert!(
         long_stats.total_instructions() > 10 * short_stats.total_instructions(),
         "long={long_stats:?}, short={short_stats:?}"
     );
-    let guard_stats = &outputs["guard"].stats;
+    let guard_stats = &outputs["guard"].stats.summary;
     assert!(
         long_stats.total_instructions() > 10 * guard_stats.total_instructions(),
         "guard={guard_stats:?}, long={long_stats:?}"
     );
 
-    let long_random_walk_stats = &outputs["random_walk/10000000"].stats;
+    let long_random_walk_stats = &outputs["random_walk/10000000"].stats.summary;
     let long_random_walk_stats = long_random_walk_stats.as_full().unwrap();
     let long_random_walk_output = AccessSummary::from(*long_random_walk_stats);
     assert!(long_random_walk_output.ram_accesses > 1_000);
@@ -213,7 +213,7 @@ fn assert_initial_outputs(outputs: &HashMap<String, BenchmarkOutput>) {
     if !cfg!(debug_assertions) {
         for (name, expected_stats) in &EXPECTED_STATS.default {
             println!("Comparing bench {name}");
-            let actual_stats = outputs[name].stats.as_full().unwrap();
+            let actual_stats = outputs[name].stats.summary.as_full().unwrap();
             assert_close(actual_stats, expected_stats);
         }
     }
@@ -225,10 +225,13 @@ fn assert_new_outputs(
 ) {
     assert_eq!(outputs.len(), 1);
     let short_output = &outputs["fib_short"];
-    let expected_old_stats = old["fib_short"].stats;
-    assert_eq!(short_output.prev_stats, Some(expected_old_stats));
+    let expected_old_stats = old["fib_short"].stats.summary;
+    assert_eq!(
+        short_output.prev_stats.as_ref().unwrap().summary,
+        expected_old_stats
+    );
     assert_close(
-        short_output.stats.as_full().unwrap(),
+        short_output.stats.summary.as_full().unwrap(),
         expected_old_stats.as_full().unwrap(),
     );
 }
@@ -252,7 +255,7 @@ fn benchmarking_everything_with_mock_cachegrind() {
     let outputs = read_outputs(&out_path);
     // Check that outputs exactly match the sampled ones
     for (name, expected_stats) in &EXPECTED_STATS.default {
-        let actual_stats = outputs[name].stats.as_full().unwrap();
+        let actual_stats = outputs[name].stats.summary.as_full().unwrap();
         assert_eq!(actual_stats, expected_stats);
     }
 
@@ -295,7 +298,7 @@ fn test_handling_interrupts(temp_dir: &tempfile::TempDir) {
 
     let outputs = read_outputs(&out_path);
     for (name, expected_stats) in &EXPECTED_STATS.default {
-        let actual_stats = outputs[name].stats.as_full().unwrap();
+        let actual_stats = outputs[name].stats.summary.as_full().unwrap();
         assert_eq!(actual_stats, expected_stats);
     }
 }
@@ -318,7 +321,10 @@ fn benchmarking_with_mock_cachegrind_and_custom_profile() {
     assert!(output.status.success(), "{stderr}");
 
     let outputs = read_outputs(&out_path);
-    assert_eq!(outputs["fib_short"].stats.total_instructions(), 1_739);
+    assert_eq!(
+        outputs["fib_short"].stats.summary.total_instructions(),
+        1_739
+    );
 }
 
 #[test]
@@ -417,8 +423,8 @@ fn using_custom_job_count() {
         let outputs = read_outputs(&out_path);
         for (name, output) in outputs {
             println!("Comparing bench {name}");
-            let stats = output.stats.as_full().unwrap();
-            let initial_stats = &initial_outputs[&name].stats;
+            let stats = output.stats.summary.as_full().unwrap();
+            let initial_stats = &initial_outputs[&name].stats.summary;
             let initial_stats = initial_stats.as_full().unwrap();
             assert_close(stats, initial_stats);
         }
@@ -459,21 +465,21 @@ fn disabling_cache_simulation() {
     let outputs = read_outputs(&out_path);
     for &name in EXPECTED_BENCH_NAMES {
         assert!(outputs[name].prev_stats.is_none());
-        let stats = outputs[name].stats;
+        let stats = outputs[name].stats.summary;
         if let CachegrindStats::Simple { instructions, .. } = stats {
             assert!(instructions > 100);
         } else {
             panic!("Unexpected stats: {stats:?}");
         }
     }
-    let short_instructions = outputs["fib_short"].stats.total_instructions();
-    let long_instructions = outputs["fib_long"].stats.total_instructions();
+    let short_instructions = outputs["fib_short"].stats.summary.total_instructions();
+    let long_instructions = outputs["fib_long"].stats.summary.total_instructions();
     assert!(
         long_instructions > 10 * short_instructions,
         "short={short_instructions}, long={long_instructions}"
     );
 
-    let guard_instructions = outputs["guard"].stats.total_instructions();
+    let guard_instructions = outputs["guard"].stats.summary.total_instructions();
     assert!(
         guard_instructions.abs_diff(short_instructions) < 10,
         "short={short_instructions}, guard={guard_instructions}"
@@ -483,7 +489,7 @@ fn disabling_cache_simulation() {
         for (name, expected_stats) in &EXPECTED_STATS.default {
             println!("Comparing bench {name}");
             let expected_instructions = expected_stats.instructions.total;
-            let actual_instructions = outputs[name].stats.total_instructions();
+            let actual_instructions = outputs[name].stats.summary.total_instructions();
             assert_close_values(actual_instructions, expected_instructions);
         }
     }

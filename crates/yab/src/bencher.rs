@@ -232,7 +232,7 @@ impl CachegrindRunner {
         );
         let final_full_path = format!("{}/{}.cachegrind", self.options.cachegrind_out_dir, self.id);
         let old_baseline = self.load_and_backup_output(&final_baseline_path);
-        let prev_output = old_baseline.and_then(|baseline| {
+        let prev_stats = old_baseline.and_then(|baseline| {
             let full = self.load_and_backup_output(&final_full_path)?;
             Some(full - baseline)
         });
@@ -255,7 +255,7 @@ impl CachegrindRunner {
 
         // FIXME: handle `warm_up_instructions == 0` specially
         let estimated_iterations =
-            self.options.warm_up_instructions / output.stats.total_instructions();
+            self.options.warm_up_instructions / output.summary.total_instructions();
         let estimated_iterations = estimated_iterations.clamp(1, self.options.max_iterations);
         let baseline = if estimated_iterations == 1 {
             output
@@ -272,7 +272,7 @@ impl CachegrindRunner {
             });
             unwrap_summary!(self.reporter, cachegrind_result)
         };
-        self.reporter.baseline_computed(&baseline.stats);
+        self.reporter.baseline_computed(&baseline.summary);
 
         let command = self.options.cachegrind_wrapper(&full_path);
         let cachegrind_result = cachegrind::spawn_instrumented(SpawnArgs {
@@ -284,7 +284,7 @@ impl CachegrindRunner {
             is_baseline: false,
         });
         let full = unwrap_summary!(self.reporter, cachegrind_result);
-        let diff = full - baseline;
+        let stats = full - baseline;
 
         // (Almost) atomically move cachegrind files to their final locations, so that the following benchmark runs
         // don't output nonsense if the benchmark is interrupted. There's still a risk that the baseline file
@@ -294,11 +294,7 @@ impl CachegrindRunner {
         let io_result = fs::rename(&full_path, &final_full_path);
         unwrap_summary!(self.reporter, io_result);
 
-        self.reporter.ok(&BenchmarkOutput {
-            stats: diff.stats,
-            breakdown: diff.breakdown,
-            prev_stats: prev_output.map(|output| output.stats),
-        });
+        self.reporter.ok(&BenchmarkOutput { stats, prev_stats });
     }
 
     fn report_benchmark_result(mut self) {
@@ -315,19 +311,15 @@ impl CachegrindRunner {
             self.reporter.warning(&"no data for benchmark");
             return;
         };
-        let diff = full - baseline;
+        let stats = full - baseline;
 
         let old_baseline_path = format!("{baseline_path}.old");
         let old_full_path = format!("{full_path}.old");
         let old_baseline = self.load_output(&old_baseline_path);
-        let prev_output =
+        let prev_stats =
             old_baseline.and_then(|baseline| Some(self.load_output(&old_full_path)? - baseline));
 
-        self.reporter.ok(&BenchmarkOutput {
-            stats: diff.stats,
-            breakdown: diff.breakdown,
-            prev_stats: prev_output.map(|output| output.stats),
-        });
+        self.reporter.ok(&BenchmarkOutput { stats, prev_stats });
     }
 
     fn load_output(&mut self, path: &str) -> Option<CachegrindOutput> {

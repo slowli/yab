@@ -1,6 +1,6 @@
 //! Benchmark reporting.
 
-use std::{any::Any, collections::HashMap, fmt};
+use std::{any::Any, fmt};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -9,7 +9,7 @@ pub(crate) use self::{
     printer::{PrintingReporter, Verbosity},
     seq::SeqReporter,
 };
-use crate::{cachegrind::CachegrindFunction, BenchmarkId, CachegrindStats};
+use crate::{cachegrind::CachegrindOutput, BenchmarkId, CachegrindStats};
 
 mod printer;
 mod seq;
@@ -20,12 +20,9 @@ mod seq;
 #[non_exhaustive]
 pub struct BenchmarkOutput {
     /// Latest / current stats for the benchmark.
-    pub stats: CachegrindStats,
-    /// Breakdown of stats.
-    #[cfg_attr(feature = "serde", serde(skip, default))] // FIXME
-    pub breakdown: HashMap<CachegrindFunction, CachegrindStats>,
+    pub stats: CachegrindOutput,
     /// Previous stats for the benchmark.
-    pub prev_stats: Option<CachegrindStats>,
+    pub prev_stats: Option<CachegrindOutput>,
 }
 
 /// Reporter for benchmarking output that allows to extend or modify benchmarking logic.
