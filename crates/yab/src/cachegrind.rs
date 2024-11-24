@@ -3,12 +3,14 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
+    convert::Infallible,
     fmt, fs, io,
     io::BufRead,
     ops,
     path::Path,
     process,
     process::{Command, ExitStatus},
+    str::FromStr,
 };
 
 #[cfg(feature = "serde")]
@@ -176,7 +178,7 @@ pub(crate) fn spawn_instrumented(args: SpawnArgs) -> Result<CachegrindOutput, Ca
 }
 
 /// Information about a particular type of operations (instruction reads, data reads / writes).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CachegrindDataPoint {
     /// Total number of operations performed.
@@ -234,7 +236,7 @@ impl ops::Mul<u64> for CachegrindDataPoint {
 }
 
 /// Full `cachegrind` stats including cache simulation.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FullCachegrindStats {
     /// Instruction-related statistics.
@@ -329,6 +331,31 @@ pub enum CachegrindStats {
     Full(FullCachegrindStats),
 }
 
+impl Default for CachegrindStats {
+    fn default() -> Self {
+        Self::Full(FullCachegrindStats::default())
+    }
+}
+
+impl ops::Add for CachegrindStats {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Self::Full(lhs), Self::Full(rhs)) => Self::Full(lhs + rhs),
+            _ => Self::Simple {
+                instructions: self.total_instructions() + rhs.total_instructions(),
+            },
+        }
+    }
+}
+
+impl ops::AddAssign for CachegrindStats {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
+    }
+}
+
 /// Uses saturated subtraction for all primitive `u64` values.
 impl ops::Sub for CachegrindStats {
     type Output = Self;
@@ -375,7 +402,6 @@ impl CachegrindStats {
 #[non_exhaustive]
 pub struct CachegrindOutput {
     pub summary: CachegrindStats,
-    #[cfg_attr(feature = "serde", serde(skip))] // FIXME
     pub breakdown: HashMap<CachegrindFunction, CachegrindStats>,
 }
 
@@ -419,9 +445,6 @@ impl CachegrindOutput {
                 if numbers.len() != events.len() + 1 {
                     return Err("mismatch between events and stats".into());
                 }
-                let line = numbers[0]
-                    .parse::<u64>()
-                    .map_err(|_| format!("line is not an u64: {}", numbers[0]))?;
 
                 let summary_by_event: Result<HashMap<_, _>, ParseError> = events
                     .iter()
@@ -444,9 +467,8 @@ impl CachegrindOutput {
                 let function = CachegrindFunction {
                     filename: filename.clone(),
                     name: function_name.clone(),
-                    line,
                 };
-                breakdown.insert(function, stats);
+                *breakdown.entry(function).or_default() += stats;
             }
         }
 
@@ -539,30 +561,54 @@ impl From<FullCachegrindStats> for AccessSummary {
     }
 }
 
+/// Function associated with captured cachegrind stats.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CachegrindFunction {
     filename: Option<String>,
     name: String,
-    line: u64,
 }
 
 impl fmt::Display for CachegrindFunction {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&self.name)?;
-        if self.line > 0 {
-            write!(formatter, ":{}", self.line)?;
+        if let Some(filename) = &self.filename {
+            write!(formatter, "@{filename}")?;
         }
         Ok(())
     }
 }
 
+impl FromStr for CachegrindFunction {
+    type Err = Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let Some((name, filename)) = s.rsplit_once('@') else {
+            return Ok(Self::rust(s));
+        };
+        Ok(Self {
+            filename: Some(filename.to_owned()),
+            name: name.to_owned(),
+        })
+    }
+}
+
 impl CachegrindFunction {
+    /// Creates a new Rust-like function.
     pub fn rust(name: impl Into<String>) -> Self {
         Self {
             filename: None,
             name: name.into(),
-            line: 0,
         }
+    }
+
+    /// Returns the name of this function.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the filename for this function. For Rust, this field may be empty.
+    pub fn filename(&self) -> Option<&str> {
+        self.filename.as_deref()
     }
 }
 
@@ -650,6 +696,26 @@ impl Drop for CaptureGuard {
             #[cfg(feature = "instrumentation")]
             crabgrind::cachegrind::stop_instrumentation();
             process::exit(0);
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+mod serde_helpers {
+    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::CachegrindFunction;
+
+    impl Serialize for CachegrindFunction {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            serializer.serialize_str(&self.to_string())
+        }
+    }
+
+    impl<'de> Deserialize<'de> for CachegrindFunction {
+        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            let raw = String::deserialize(deserializer)?;
+            raw.parse().map_err(de::Error::custom)
         }
     }
 }
@@ -748,5 +814,19 @@ mod tests {
         let stats: CachegrindStats = serde_json::from_value(json.clone()).unwrap();
         assert_full_stats(stats.as_full().unwrap());
         assert_eq!(serde_json::to_value(stats).unwrap(), json);
+    }
+
+    #[test]
+    fn parsing_function() {
+        let s = "<alloc::sync::Arc<T> as core::default::Default>::default";
+        let function = CachegrindFunction::rust(s);
+        assert_eq!(function.to_string(), s);
+        let restored: CachegrindFunction = s.parse().unwrap();
+        assert_eq!(restored, function);
+
+        let with_file = "<alloc::sync::Arc<T> as core::default::Default>::default@path/to/file.rs";
+        let restored: CachegrindFunction = with_file.parse().unwrap();
+        assert_eq!(restored.filename.unwrap(), "path/to/file.rs");
+        assert_eq!(restored.name, s);
     }
 }
