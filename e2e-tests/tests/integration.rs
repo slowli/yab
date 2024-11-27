@@ -377,7 +377,7 @@ fn printing_benchmark_results() {
         .lines()
         .filter(|line| line.contains("no data for benchmark"))
         .count();
-    assert_eq!(benchmarks_without_data, 7); // `fib/`, `guard` and `random_walk/` benches
+    assert_eq!(benchmarks_without_data, 8); // `fib/`, `guard` and `random_walk/` benches
 
     // Check that only outputs for benches that have already been run are supplied to the processor.
     let outputs = read_outputs(&out_path);

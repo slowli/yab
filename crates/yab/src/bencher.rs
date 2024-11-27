@@ -101,7 +101,8 @@ impl Drop for MainBencher {
 
 impl MainBencher {
     fn new(options: BenchOptions) -> Self {
-        let mut reporter = PrintingReporter::new(options.styling(), options.verbosity());
+        let mut reporter =
+            PrintingReporter::new(options.styling(), options.verbosity(), options.breakdown);
         if !options.validate(&mut reporter) {
             process::exit(1);
         }

@@ -270,6 +270,7 @@ pub(crate) enum Verbosity {
 #[derive(Debug)]
 pub(crate) struct PrintingReporter<W = io::Stderr> {
     verbosity: Verbosity,
+    breakdown: bool,
     line_printer: Arc<Mutex<LinePrinter<W>>>,
 }
 
@@ -277,13 +278,14 @@ impl<W> Clone for PrintingReporter<W> {
     fn clone(&self) -> Self {
         Self {
             verbosity: self.verbosity,
+            breakdown: self.breakdown,
             line_printer: self.line_printer.clone(),
         }
     }
 }
 
 impl PrintingReporter {
-    pub(crate) fn new(styling: bool, verbosity: Verbosity) -> Self {
+    pub(crate) fn new(styling: bool, verbosity: Verbosity, breakdown: bool) -> Self {
         let line_printer = LinePrinter {
             inner: io::stderr(),
             styling,
@@ -291,6 +293,7 @@ impl PrintingReporter {
         };
         Self {
             verbosity,
+            breakdown,
             line_printer: Arc::new(Mutex::new(line_printer)),
         }
     }
@@ -481,7 +484,7 @@ impl<W: io::Write + fmt::Debug + Send> super::BenchmarkReporter for BenchmarkRep
             prev_stats.as_ref().map(|stats| stats.summary),
         );
 
-        if self.parent.verbosity >= Verbosity::Verbose {
+        if self.parent.breakdown {
             let breakdown = BreakdownList::new(stats, prev_stats.as_ref(), 0.01);
             breakdown.print(&mut printer);
         }
@@ -662,7 +665,7 @@ impl<'a> BreakdownList<'a> {
 
         printer
             .bold()
-            .print_str("    %   % diff   Instr.diff  Function\n");
+            .print_str("    %   % diff  Instr.diff  Function\n");
 
         let mut full_fns = vec![];
         for (function, item) in &self.items {
@@ -681,7 +684,7 @@ impl<'a> BreakdownList<'a> {
                 let color = Self::color_diff(change, DIFF_THRESHOLD);
                 printer.fg(color).print(format_args!("{change:>+5.1}pp"));
             } else {
-                printer.print_str("       "); // +99.9pp
+                printer.dimmed().print_str("      -"); // +99.9pp
             }
             printer.print_str("  ");
 
@@ -692,9 +695,9 @@ impl<'a> BreakdownList<'a> {
                 let mut printer = printer.fg(color);
                 if let Some(instr_change) = instr_change {
                     let accuracy = (instr_change.abs() < 100.0).into();
-                    printer.print(format_args!("{instr_change:>+10.accuracy$}%"));
+                    printer.print(format_args!("{instr_change:>+9.accuracy$}%"));
                 } else {
-                    printer.print_str("          ");
+                    printer.dimmed().print_str("         -");
                 }
             }
             printer.print_str("  ");
@@ -749,6 +752,7 @@ mod tests {
         PrintingReporter {
             verbosity,
             line_printer: Arc::new(Mutex::new(line_printer)),
+            breakdown: false,
         }
     }
 
@@ -896,15 +900,15 @@ mod tests {
         let buffer = extract_buffer(reporter);
         let lines: Vec<_> = buffer.lines().collect();
         assert_eq!(lines.len(), 6, "{lines:#?}");
-        assert_eq!(lines[0], "    %   % diff   Instr.diff  Function");
-        assert_eq!(lines[1], "90.0%   +6.7pp       -10.0%  yab::test");
+        assert_eq!(lines[0], "    %   % diff  Instr.diff  Function");
+        assert_eq!(lines[1], "90.0%   +6.7pp      -10.0%  yab::test");
         assert_eq!(
             lines[2],
-            "10.0%  +10.0pp        +inf%  <alloc::sync::Arc<T> as core::default::Default>::default"
+            "10.0%  +10.0pp       +inf%  <alloc::sync::Arc<T> as core::default::Default>::default"
         );
         assert_eq!(
             lines[3],
-            " 0.0%  -16.7pp        -100%  <hashbrown::raw::RawTable<T,A> as core::ops::drop::Drop… [1]"
+            " 0.0%  -16.7pp       -100%  <hashbrown::raw::RawTable<T,A> as core::ops::drop::Drop… [1]"
         );
         assert_eq!(lines[4], "-----");
         assert_eq!(
@@ -942,27 +946,6 @@ mod tests {
             .unwrap();
         assert_eq!(lines[ram_idx + 1], "│ ├ Instr.                    10");
         assert_eq!(lines[ram_idx + 2], "│ └ Data reads                10");
-
-        let breakdown_start = lines
-            .iter()
-            .position(|&line| line.trim_start().starts_with('%'))
-            .unwrap();
-        assert_eq!(
-            lines[breakdown_start - 1],
-            "└ Est. cycles               1350"
-        );
-        assert_eq!(
-            lines[breakdown_start],
-            "    %   % diff   Instr.diff  Function"
-        );
-        assert_eq!(
-            lines[breakdown_start + 1],
-            "90.0%                       yab::test"
-        );
-        assert_eq!(
-            lines[breakdown_start + 2],
-            "10.0%                       <alloc::sync::Arc<T> as core::default::Default>::default"
-        );
     }
 
     #[test]
