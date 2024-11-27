@@ -66,6 +66,9 @@ pub(crate) struct BenchOptions {
     /// Output only basic benchmarking information.
     #[arg(long, short = 'q', conflicts_with = "verbose")]
     pub quiet: bool,
+    /// Output stats breakdown by function.
+    #[arg(long)]
+    pub breakdown: bool,
 
     /// List all benchmarks instead of running them.
     #[arg(long, conflicts_with = "print")]

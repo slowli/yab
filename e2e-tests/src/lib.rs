@@ -7,6 +7,11 @@
     clippy::missing_panics_doc
 )]
 
+use std::{
+    collections::HashSet,
+    hash::{BuildHasherDefault, DefaultHasher},
+};
+
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use yab::{black_box, Bencher, BenchmarkId};
 
@@ -14,6 +19,8 @@ use crate::exporter::BenchmarkExporter;
 pub use crate::exporter::EXPORTER_OUTPUT_VAR;
 
 mod exporter;
+
+type ZeroHasher = BuildHasherDefault<DefaultHasher>;
 
 const RNG_SEED: u64 = 123;
 
@@ -77,4 +84,12 @@ pub fn main(bencher: &mut Bencher) {
             pos
         });
     }
+
+    let mut rng = SmallRng::seed_from_u64(RNG_SEED);
+    bencher.bench("collect/hash_set", || {
+        // Use a deterministic (zero) seed for the hasher to get reproducible results
+        (0..10_000)
+            .map(|_| rng.gen())
+            .collect::<HashSet<u64, ZeroHasher>>()
+    });
 }
