@@ -61,7 +61,7 @@ pub fn main(bencher: &mut Bencher) {
     });
 
     let mut rng = SmallRng::seed_from_u64(RNG_SEED);
-    let random_bytes: Vec<usize> = (0..10_000_000).map(|_| rng.gen()).collect();
+    let random_bytes: Vec<u32> = (0..10_000_000).map(|_| rng.random()).collect();
 
     for len in [1_000_000, 10_000_000] {
         let id = BenchmarkId::new("random_walk", len);
@@ -71,7 +71,7 @@ pub fn main(bencher: &mut Bencher) {
             for _ in 0..100_000 {
                 pos = black_box(
                     pos.wrapping_mul(31)
-                        .wrapping_add(random_bytes[black_box(pos) % len]),
+                        .wrapping_add(random_bytes[black_box(pos) % len] as usize),
                 );
             }
             pos
