@@ -12,7 +12,7 @@ allow = [
   # Permissive open-source licenses
   "MIT",
   "Apache-2.0",
-  "Unicode-DFS-2016",
+  "Unicode-3.0",
 ]
 confidence-threshold = 0.8
 
@@ -20,10 +20,7 @@ confidence-threshold = 0.8
 multiple-versions = "deny"
 wildcards = "deny"
 allow-wildcard-paths = true
-skip-tree = [
-  # Old windows-sys version used by `clap`. Irrelevant because cachegrind doesn't support Windows.
-  { name = "windows-sys", version = "^0.52" },
-]
+skip-tree = []
 
 [sources]
 unknown-registry = "deny"
