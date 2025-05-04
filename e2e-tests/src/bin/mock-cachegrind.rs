@@ -9,7 +9,7 @@ use std::{
 };
 
 use serde::Deserialize;
-use yab::{CachegrindDataPoint, FullCachegrindStats};
+use yab::{CachegrindDataPoint, CachegrindFunction, FullCachegrindStats};
 
 const CONST_OVERHEAD: FullCachegrindStats = FullCachegrindStats {
     instructions: CachegrindDataPoint {
@@ -50,6 +50,7 @@ const ITER_OVERHEAD: FullCachegrindStats = FullCachegrindStats {
 #[derive(Debug, Deserialize)]
 struct AllStats {
     default: HashMap<String, FullCachegrindStats>,
+    breakdown: HashMap<String, HashMap<CachegrindFunction, FullCachegrindStats>>,
     #[serde(flatten)]
     other_profiles: HashMap<String, HashMap<String, FullCachegrindStats>>,
 }
@@ -121,6 +122,40 @@ fn main() {
         "events: Ir I1mr ILmr Dr D1mr DLmr Dw D1mw DLmw"
     )
     .unwrap();
+
+    if !is_baseline {
+        if let Some(breakdown) = stats.breakdown.get(bench_name) {
+            let mut functions_by_file = HashMap::<_, Vec<_>>::new();
+            for (function, fn_stats) in breakdown {
+                functions_by_file
+                    .entry(function.filename().unwrap_or("???"))
+                    .or_default()
+                    .push((function.name(), fn_stats));
+            }
+
+            for (filename, functions) in functions_by_file {
+                writeln!(&mut writer, "fl={filename}").unwrap();
+                for (name, fn_stats) in functions {
+                    writeln!(&mut writer, "fn={name}").unwrap();
+                    writeln!(
+                        &mut writer,
+                        "0 {Ir} {I1mr} {ILmr} {Dr} {D1mr} {DLmr} {Dw} {D1mw} {DLmw}",
+                        Ir = fn_stats.instructions.total,
+                        I1mr = fn_stats.instructions.l1_misses,
+                        ILmr = fn_stats.instructions.l3_misses,
+                        Dr = fn_stats.data_reads.total,
+                        D1mr = fn_stats.data_reads.l1_misses,
+                        DLmr = fn_stats.data_reads.l3_misses,
+                        Dw = fn_stats.data_writes.total,
+                        D1mw = fn_stats.data_writes.l1_misses,
+                        DLmw = fn_stats.data_writes.l3_misses
+                    )
+                    .unwrap();
+                }
+            }
+        }
+    }
+
     writeln!(
         &mut writer,
         "summary: {Ir} {I1mr} {ILmr} {Dr} {D1mr} {DLmr} {Dw} {D1mw} {DLmw}",

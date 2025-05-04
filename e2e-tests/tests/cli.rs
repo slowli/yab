@@ -159,3 +159,20 @@ fn verbose_transcript() {
         ],
     );
 }
+
+#[test]
+fn breakdown() {
+    let (config, _lock) = test_config(false);
+    let template_options = TemplateOptions {
+        window_frame: true,
+        width: 850,
+        wrap: None,
+        ..TemplateOptions::default()
+    };
+    config.with_template(Template::new(template_options)).test(
+        lib_snapshot("breakdown"),
+        [UserInput::command(
+            "cargo bench --bench all -- --quiet --breakdown collect/hash_set",
+        )],
+    );
+}
