@@ -601,7 +601,7 @@ impl<'a> BreakdownList<'a> {
                     .map_or(0, CachegrindStats::total_instructions)
             });
             let notable = stats.total_instructions() > current_threshold
-                || prev_instructions.map_or(false, |instr| instr > prev_threshold);
+                || prev_instructions.is_some_and(|instr| instr > prev_threshold);
             if !notable {
                 return None;
             }

@@ -67,7 +67,7 @@
             <div class="input" data-exit-status="0"><pre><span class="prompt">$</span> cargo bench --bench all -- --quiet random_walk/10000000</pre></div>
             <div class="output"><pre>[<span class="bold fg10">√</span>] random_walk/10000000<span class="dimmed"> (10ms)</span>
 ├ Instructions           1800023
-└ Est. cycles            3040455
+└ Est. cycles            3036431
 </pre></div>
             <div class="input input-hidden" data-exit-status="0"><pre><span class="prompt">$</span> export CACHEGRIND_WRAPPER&#x3D;&quot;$CACHEGRIND_WRAPPER:--profile&#x3D;comparison&quot;</pre></div>
             <div class="output"><pre></pre></div>
@@ -79,16 +79,16 @@
 [<span class="fg14">*</span>] random_walk/10000000<span class="dimmed"> @ e2e-tests/src/lib.rs:50</span>: captured baseline (1771211 i<b class="hard-br"><br/></b>nstructions)
 [<span class="bold fg10">√</span>] random_walk/10000000<span class="dimmed"> @ e2e-tests/src/lib.rs:50</span><span class="dimmed"> (10ms)</span>
 ├ Instructions           1770011<span class="fg10">       -30012 (-1.67%)</span>
-├ L1 hits                2140042<span class="fg10">       -60033 (-2.73%)</span>
+├ L1 hits                2140042<span class="fg10">       -59884 (-2.72%)</span>
 │ ├ Instr.               1770011<span class="fg10">       -30012 (-1.67%)</span>
-│ ├ Data reads            180024<span class="fg10">       -20022 (-10.01%)</span>
+│ ├ Data reads            180024<span class="fg10">       -19873 (-9.94%)</span>
 │ └ Data writes           190007<span class="fg10">        -9999 (-5.00%)</span>
-├ L2/L3 hits               88676<span class="fg9">          +64 (+0.07%)</span>
-│ ├ Data reads             88676<span class="fg9">          +65 (+0.07%)</span>
+├ L2/L3 hits               88676<span class="fg10">         -239 (-0.27%)</span>
+│ ├ Data reads             88676<span class="fg10">         -238 (-0.27%)</span>
 │ └ Data writes                0<span class="fg10">           -1 (-100.00%)</span>
-├ RAM accesses             11309<span class="fg10">          -43 (-0.38%)</span>
-│ └ Data reads             11309<span class="fg10">          -43 (-0.38%)</span>
-└ Est. cycles            2979237<span class="fg10">       -61218 (-2.01%)</span>
+├ RAM accesses             11309<span class="fg9">         +111 (+0.99%)</span>
+│ └ Data reads             11309<span class="fg9">         +111 (+0.99%)</span>
+└ Est. cycles            2979237<span class="fg10">       -57194 (-1.88%)</span>
 </pre></div>
           </div>
         </foreignObject>

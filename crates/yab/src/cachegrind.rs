@@ -122,10 +122,8 @@ pub(crate) fn check() -> Result<String, CachegrindError> {
     if !output.status.success() {
         return Err(CachegrindError::NoCachegrind);
     }
-    let version = String::from_utf8(output.stdout).map_err(|err| {
-        let err = io::Error::new(io::ErrorKind::Other, err);
-        CachegrindError::Exec(err)
-    })?;
+    let version = String::from_utf8(output.stdout)
+        .map_err(|err| CachegrindError::Exec(io::Error::other(err)))?;
     Ok(version.trim().to_owned())
 }
 

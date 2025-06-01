@@ -110,8 +110,8 @@
       },
       "data_reads": {
         "total": 300009,
-        "l1_misses": 99963,
-        "l3_misses": 11352
+        "l1_misses": 100112,
+        "l3_misses": 11198
       },
       "data_writes": {
         "total": 200007,
