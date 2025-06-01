@@ -105,6 +105,10 @@ More verbose output with `--verbose` option also showcasing changes to the bench
 
 ![Verbose benchmark output](examples/verbose.svg)
 
+Verbose output also outputs breakdown by function:
+
+![Breakdown by function](examples/breakdown.svg)
+
 ## Limitations
 
 - `cachegrind` has somewhat limited platform support (e.g., doesn't support Windows).

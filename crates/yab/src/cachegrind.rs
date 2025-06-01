@@ -3,12 +3,14 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
+    convert::Infallible,
     fmt, fs, io,
     io::BufRead,
     ops,
     path::Path,
     process,
     process::{Command, ExitStatus},
+    str::FromStr,
 };
 
 #[cfg(feature = "serde")]
@@ -135,7 +137,7 @@ pub(crate) struct SpawnArgs<'a> {
     pub is_baseline: bool,
 }
 
-pub(crate) fn spawn_instrumented(args: SpawnArgs) -> Result<CachegrindStats, CachegrindError> {
+pub(crate) fn spawn_instrumented(args: SpawnArgs) -> Result<CachegrindOutput, CachegrindError> {
     let SpawnArgs {
         mut command,
         out_path,
@@ -169,12 +171,12 @@ pub(crate) fn spawn_instrumented(args: SpawnArgs) -> Result<CachegrindStats, Cac
         out_path: out_path.to_owned(),
         error,
     })?;
-    CachegrindStats::read(io::BufReader::new(out))
+    CachegrindOutput::read(io::BufReader::new(out))
         .map_err(|err| err.generalize(out_path.to_owned()))
 }
 
 /// Information about a particular type of operations (instruction reads, data reads / writes).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CachegrindDataPoint {
     /// Total number of operations performed.
@@ -232,7 +234,7 @@ impl ops::Mul<u64> for CachegrindDataPoint {
 }
 
 /// Full `cachegrind` stats including cache simulation.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FullCachegrindStats {
     /// Instruction-related statistics.
@@ -262,6 +264,10 @@ impl FullCachegrindStats {
                 l3_misses: summary_from_map(summary_by_event, "DLmw")?,
             },
         })
+    }
+
+    fn is_zero(&self) -> bool {
+        self.instructions.total == 0 && self.data_reads.total == 0 && self.data_writes.total == 0
     }
 }
 
@@ -323,6 +329,31 @@ pub enum CachegrindStats {
     Full(FullCachegrindStats),
 }
 
+impl Default for CachegrindStats {
+    fn default() -> Self {
+        Self::Full(FullCachegrindStats::default())
+    }
+}
+
+impl ops::Add for CachegrindStats {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Self::Full(lhs), Self::Full(rhs)) => Self::Full(lhs + rhs),
+            _ => Self::Simple {
+                instructions: self.total_instructions() + rhs.total_instructions(),
+            },
+        }
+    }
+}
+
+impl ops::AddAssign for CachegrindStats {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
+    }
+}
+
 /// Uses saturated subtraction for all primitive `u64` values.
 impl ops::Sub for CachegrindStats {
     type Output = Self;
@@ -340,52 +371,6 @@ impl ops::Sub for CachegrindStats {
 }
 
 impl CachegrindStats {
-    pub(crate) fn new(file: fs::File, path: &str) -> Result<Self, CachegrindError> {
-        let reader = io::BufReader::new(file);
-        Self::read(reader).map_err(|err| err.generalize(path.to_owned()))
-    }
-
-    fn read(reader: impl BufRead) -> Result<Self, ParseError> {
-        let mut events_line = None;
-        let mut summary_line = None;
-        for line in reader.lines() {
-            let line = line?;
-            if let Some(events) = line.strip_prefix("events:") {
-                if events_line.is_some() {
-                    return Err("events are redefined".into());
-                }
-                events_line = Some(events.to_owned());
-            } else if let Some(summary) = line.strip_prefix("summary:") {
-                if summary_line.is_some() {
-                    return Err("summary is redefined".into());
-                }
-                summary_line = Some(summary.to_owned());
-            }
-        }
-
-        let events = events_line.ok_or("no events")?;
-        let events: Vec<_> = events.split_whitespace().collect();
-        let summary = summary_line.ok_or("no summary")?;
-        let summary: Vec<_> = summary
-            .split_whitespace()
-            .map(|num| {
-                num.parse::<u64>()
-                    .map_err(|_| format!("summary is not an u64: {num}"))
-            })
-            .collect::<Result<_, _>>()?;
-        if events.len() != summary.len() {
-            return Err("mismatch between events and summary".into());
-        }
-
-        let summary_by_event: HashMap<_, _> = events.into_iter().zip(summary).collect();
-        Ok(if summary_by_event.len() == 1 {
-            let instructions = summary_from_map(&summary_by_event, "Ir")?;
-            Self::Simple { instructions }
-        } else {
-            Self::Full(FullCachegrindStats::read(&summary_by_event)?)
-        })
-    }
-
     /// Returns full stats if they are available.
     pub fn as_full(&self) -> Option<&FullCachegrindStats> {
         match self {
@@ -399,6 +384,135 @@ impl CachegrindStats {
         match self {
             Self::Simple { instructions } => *instructions,
             Self::Full(stats) => stats.instructions.total,
+        }
+    }
+
+    fn is_zero(&self) -> bool {
+        match self {
+            Self::Simple { instructions } => *instructions == 0,
+            Self::Full(stats) => stats.is_zero(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[non_exhaustive]
+pub struct CachegrindOutput {
+    pub summary: CachegrindStats,
+    pub breakdown: HashMap<CachegrindFunction, CachegrindStats>,
+}
+
+impl CachegrindOutput {
+    pub(crate) fn new(file: fs::File, path: &str) -> Result<Self, CachegrindError> {
+        let reader = io::BufReader::new(file);
+        Self::read(reader).map_err(|err| err.generalize(path.to_owned()))
+    }
+
+    fn read(reader: impl BufRead) -> Result<Self, ParseError> {
+        let mut events = None;
+        let mut summary_line = None;
+
+        let mut filename = None;
+        let mut function_name = None;
+        let mut breakdown = HashMap::new();
+        for line in reader.lines() {
+            let line = line?;
+            if let Some(events_line) = line.strip_prefix("events:") {
+                if events.is_some() {
+                    return Err("events are redefined".into());
+                }
+                events = Some(
+                    events_line
+                        .split_whitespace()
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>(),
+                );
+            } else if let Some(summary) = line.strip_prefix("summary:") {
+                if summary_line.is_some() {
+                    return Err("summary is redefined".into());
+                }
+                summary_line = Some(summary.to_owned());
+                break;
+            } else if let Some(file) = line.strip_prefix("fl=") {
+                filename = (file != "???").then(|| file.trim().to_owned());
+            } else if let Some(name) = line.strip_prefix("fn=") {
+                function_name = Some(name.to_owned());
+            } else if let (Some(events), Some(function_name)) = (&events, &function_name) {
+                let numbers: Vec<_> = line.split_whitespace().collect();
+                if numbers.len() != events.len() + 1 {
+                    return Err("mismatch between events and stats".into());
+                }
+
+                let summary_by_event: Result<HashMap<_, _>, ParseError> = events
+                    .iter()
+                    .zip(&numbers[1..])
+                    .map(|(event, s)| {
+                        let stat = s
+                            .parse::<u64>()
+                            .map_err(|_| format!("{event} stat is not an u64: {s}"))?;
+                        Ok((event.as_str(), stat))
+                    })
+                    .collect();
+                let summary_by_event = summary_by_event?;
+                let stats = if summary_by_event.len() == 1 {
+                    let instructions = summary_from_map(&summary_by_event, "Ir")?;
+                    CachegrindStats::Simple { instructions }
+                } else {
+                    CachegrindStats::Full(FullCachegrindStats::read(&summary_by_event)?)
+                };
+
+                let function = CachegrindFunction {
+                    filename: filename.clone(),
+                    name: function_name.clone(),
+                };
+                *breakdown.entry(function).or_default() += stats;
+            }
+        }
+
+        let events = events.ok_or("no events")?;
+        let summary = summary_line.ok_or("no summary")?;
+        let summary: Vec<_> = summary
+            .split_whitespace()
+            .map(|num| {
+                num.parse::<u64>()
+                    .map_err(|_| format!("summary is not an u64: {num}"))
+            })
+            .collect::<Result<_, _>>()?;
+        if events.len() != summary.len() {
+            return Err("mismatch between events and summary".into());
+        }
+
+        let summary_by_event: HashMap<_, _> =
+            events.iter().map(String::as_str).zip(summary).collect();
+        let stats = if summary_by_event.len() == 1 {
+            let instructions = summary_from_map(&summary_by_event, "Ir")?;
+            CachegrindStats::Simple { instructions }
+        } else {
+            CachegrindStats::Full(FullCachegrindStats::read(&summary_by_event)?)
+        };
+        Ok(Self {
+            summary: stats,
+            breakdown,
+        })
+    }
+}
+
+impl ops::Sub for CachegrindOutput {
+    type Output = Self;
+
+    fn sub(self, mut rhs: Self) -> Self::Output {
+        let breakdown_diff = self.breakdown.into_iter().filter_map(|(function, stats)| {
+            let diff = if let Some(rhs_stats) = rhs.breakdown.remove(&function) {
+                stats - rhs_stats
+            } else {
+                stats
+            };
+            (!diff.is_zero()).then_some((function, diff))
+        });
+        Self {
+            summary: self.summary - rhs.summary,
+            breakdown: breakdown_diff.collect(),
         }
     }
 }
@@ -442,6 +556,57 @@ impl From<FullCachegrindStats> for AccessSummary {
             l3_hits,
             ram_accesses,
         }
+    }
+}
+
+/// Function associated with captured cachegrind stats.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CachegrindFunction {
+    filename: Option<String>,
+    name: String,
+}
+
+impl fmt::Display for CachegrindFunction {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.name)?;
+        if let Some(filename) = &self.filename {
+            write!(formatter, "@{filename}")?;
+        }
+        Ok(())
+    }
+}
+
+impl FromStr for CachegrindFunction {
+    type Err = Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let Some((name, filename)) = s.rsplit_once('@') else {
+            return Ok(Self::rust(s));
+        };
+        Ok(Self {
+            filename: Some(filename.to_owned()),
+            name: name.to_owned(),
+        })
+    }
+}
+
+impl CachegrindFunction {
+    /// Creates a new Rust-like function.
+    pub fn rust(name: impl Into<String>) -> Self {
+        Self {
+            filename: None,
+            name: name.into(),
+        }
+    }
+
+    /// Returns the name of this function.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the filename for this function. For Rust, this field may be empty.
+    pub fn filename(&self) -> Option<&str> {
+        self.filename.as_deref()
     }
 }
 
@@ -533,6 +698,26 @@ impl Drop for CaptureGuard {
     }
 }
 
+#[cfg(feature = "serde")]
+mod serde_helpers {
+    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::CachegrindFunction;
+
+    impl Serialize for CachegrindFunction {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            serializer.serialize_str(&self.to_string())
+        }
+    }
+
+    impl<'de> Deserialize<'de> for CachegrindFunction {
+        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            let raw = String::deserialize(deserializer)?;
+            raw.parse().map_err(de::Error::custom)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
@@ -544,9 +729,9 @@ mod tests {
         let output = "\
             events: Ir\n\
             summary: 1234";
-        let stats = CachegrindStats::read(output.as_bytes()).unwrap();
+        let output = CachegrindOutput::read(output.as_bytes()).unwrap();
         assert_matches!(
-            stats,
+            output.summary,
             CachegrindStats::Simple { instructions } if instructions == 1_234
         );
     }
@@ -555,14 +740,31 @@ mod tests {
     fn parsing_full_cachegrind_output() {
         let output = "\
             events: Ir I1mr ILmr Dr D1mr DLmr Dw D1mw DLmw \n\
-            fn=(below main)\n\
-            29 9 1 1 1 0 0 5 0 0\n\
-            44 3 1 1 0 0 0 1 0 0\n\
+            fn=<alloc::string::String as core::fmt::Write>::write_str\n\
+            0 99 3 3 30 0 0 24 0 0\n\
+            fn=<alloc::sync::Arc<T> as core::default::Default>::default\n\
+            0 51 5 5 18 1 0 21 0 0\n\
             summary: 662469 1899 1843 143129 3638 2694 89043 1330 1210\n
         ";
-        let stats = CachegrindStats::read(output.as_bytes()).unwrap();
-        let stats = stats.as_full().unwrap();
+        let output = CachegrindOutput::read(output.as_bytes()).unwrap();
+        let stats = output.summary.as_full().unwrap();
         assert_full_stats(stats);
+
+        let breakdown = output.breakdown;
+        assert_eq!(breakdown.len(), 2);
+        let fn1 =
+            CachegrindFunction::rust("<alloc::string::String as core::fmt::Write>::write_str");
+        let fn1_stats = breakdown[&fn1].as_full().unwrap();
+        assert_eq!(fn1_stats.instructions.total, 99);
+        assert_eq!(fn1_stats.data_reads.total, 30);
+        assert_eq!(fn1_stats.data_writes.total, 24);
+
+        let fn2 =
+            CachegrindFunction::rust("<alloc::sync::Arc<T> as core::default::Default>::default");
+        let fn2_stats = breakdown[&fn2].as_full().unwrap();
+        assert_eq!(fn2_stats.instructions.total, 51);
+        assert_eq!(fn2_stats.data_reads.total, 18);
+        assert_eq!(fn2_stats.data_writes.total, 21);
     }
 
     fn assert_full_stats(stats: &FullCachegrindStats) {
@@ -610,5 +812,19 @@ mod tests {
         let stats: CachegrindStats = serde_json::from_value(json.clone()).unwrap();
         assert_full_stats(stats.as_full().unwrap());
         assert_eq!(serde_json::to_value(stats).unwrap(), json);
+    }
+
+    #[test]
+    fn parsing_function() {
+        let s = "<alloc::sync::Arc<T> as core::default::Default>::default";
+        let function = CachegrindFunction::rust(s);
+        assert_eq!(function.to_string(), s);
+        let restored: CachegrindFunction = s.parse().unwrap();
+        assert_eq!(restored, function);
+
+        let with_file = "<alloc::sync::Arc<T> as core::default::Default>::default@path/to/file.rs";
+        let restored: CachegrindFunction = with_file.parse().unwrap();
+        assert_eq!(restored.filename.unwrap(), "path/to/file.rs");
+        assert_eq!(restored.name, s);
     }
 }

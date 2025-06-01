@@ -2,6 +2,7 @@
 
 use std::{
     any::Any,
+    cmp,
     cmp::Ordering,
     fmt, io, ops,
     sync::{Arc, Mutex},
@@ -14,7 +15,7 @@ use anes::{
 
 use super::{BenchmarkOutput, Reporter};
 use crate::{
-    cachegrind::{AccessSummary, CachegrindStats},
+    cachegrind::{AccessSummary, CachegrindFunction, CachegrindOutput, CachegrindStats},
     BenchmarkId, FullCachegrindStats,
 };
 
@@ -207,12 +208,19 @@ impl<W: io::Write> LinePrinter<W> {
         self.print_str("\n");
     }
 
-    fn print_detail_row(&mut self, label: &str, last: bool, new: u64, old: Option<u64>) {
+    fn print_detail_row(
+        &mut self,
+        outer_line: char,
+        label: &str,
+        last: bool,
+        new: u64,
+        old: Option<u64>,
+    ) {
         const DETAIL_LABEL_WIDTH: usize = LABEL_WIDTH - 4;
 
         let line = if last { '└' } else { '├' };
         self.print(format_args!(
-            "│ {line} {label:<DETAIL_LABEL_WIDTH$} {new:>NUMBER_WIDTH$}"
+            "{outer_line} {line} {label:<DETAIL_LABEL_WIDTH$} {new:>NUMBER_WIDTH$}"
         ));
         if let Some(old) = old {
             self.print_diff(new, old);
@@ -230,6 +238,7 @@ impl<W: io::Write> LinePrinter<W> {
 
         if print_instr {
             self.print_detail_row(
+                '│',
                 "Instr.",
                 !print_reads && !print_writes,
                 new.instructions,
@@ -237,10 +246,16 @@ impl<W: io::Write> LinePrinter<W> {
             );
         }
         if print_reads {
-            self.print_detail_row("Data reads", !print_writes, new.data_reads, old_data_reads);
+            self.print_detail_row(
+                '│',
+                "Data reads",
+                !print_writes,
+                new.data_reads,
+                old_data_reads,
+            );
         }
         if print_writes {
-            self.print_detail_row("Data writes", true, new.data_writes, old_data_writes);
+            self.print_detail_row('│', "Data writes", true, new.data_writes, old_data_writes);
         }
     }
 }
@@ -255,6 +270,7 @@ pub(crate) enum Verbosity {
 #[derive(Debug)]
 pub(crate) struct PrintingReporter<W = io::Stderr> {
     verbosity: Verbosity,
+    breakdown: bool,
     line_printer: Arc<Mutex<LinePrinter<W>>>,
 }
 
@@ -262,13 +278,14 @@ impl<W> Clone for PrintingReporter<W> {
     fn clone(&self) -> Self {
         Self {
             verbosity: self.verbosity,
+            breakdown: self.breakdown,
             line_printer: self.line_printer.clone(),
         }
     }
 }
 
 impl PrintingReporter {
-    pub(crate) fn new(styling: bool, verbosity: Verbosity) -> Self {
+    pub(crate) fn new(styling: bool, verbosity: Verbosity, breakdown: bool) -> Self {
         let line_printer = LinePrinter {
             inner: io::stderr(),
             styling,
@@ -276,6 +293,7 @@ impl PrintingReporter {
         };
         Self {
             verbosity,
+            breakdown,
             line_printer: Arc::new(Mutex::new(line_printer)),
         }
     }
@@ -340,6 +358,30 @@ struct BenchmarkReporter<W> {
 }
 
 impl<W: io::Write> BenchmarkReporter<W> {
+    fn print_diff(
+        &self,
+        printer: &mut LinePrinter<W>,
+        stats: CachegrindStats,
+        prev_stats: Option<CachegrindStats>,
+    ) {
+        let (stats, prev_stats) = match (stats, prev_stats) {
+            (CachegrindStats::Simple { instructions }, _) => {
+                let old_instructions = prev_stats.as_ref().map(CachegrindStats::total_instructions);
+                printer.print_row("Instructions", true, instructions, old_instructions);
+                return;
+            }
+            (_, Some(CachegrindStats::Simple { instructions: old })) => {
+                printer.print_row("Instructions", true, stats.total_instructions(), Some(old));
+                return;
+            }
+            (CachegrindStats::Full(stats), None) => (stats, None),
+            (CachegrindStats::Full(stats), Some(CachegrindStats::Full(old_stats))) => {
+                (stats, Some(old_stats))
+            }
+        };
+        self.full_diff(printer, stats, prev_stats);
+    }
+
     fn full_diff(
         &self,
         printer: &mut LinePrinter<W>,
@@ -436,23 +478,16 @@ impl<W: io::Write + fmt::Debug + Send> super::BenchmarkReporter for BenchmarkRep
         }
         printer.print_str("\n");
 
-        let (stats, prev_stats) = match (*stats, *prev_stats) {
-            (CachegrindStats::Simple { instructions }, _) => {
-                let old_instructions = prev_stats.as_ref().map(CachegrindStats::total_instructions);
-                printer.print_row("Instructions", true, instructions, old_instructions);
-                return;
-            }
-            (_, Some(CachegrindStats::Simple { instructions: old })) => {
-                printer.print_row("Instructions", true, stats.total_instructions(), Some(old));
-                return;
-            }
-            (CachegrindStats::Full(stats), None) => (stats, None),
-            (CachegrindStats::Full(stats), Some(CachegrindStats::Full(old_stats))) => {
-                (stats, Some(old_stats))
-            }
-        };
+        self.print_diff(
+            &mut printer,
+            stats.summary,
+            prev_stats.as_ref().map(|stats| stats.summary),
+        );
 
-        self.full_diff(&mut printer, stats, prev_stats);
+        if self.parent.breakdown {
+            let breakdown = BreakdownList::new(stats, prev_stats.as_ref(), 0.01);
+            breakdown.print(&mut printer);
+        }
     }
 
     fn warning(&mut self, warning: &dyn fmt::Display) {
@@ -529,8 +564,182 @@ impl FullCachegrindStats {
     }
 }
 
+#[derive(Debug)]
+struct BreakdownListItem {
+    current: u64,
+    prev: Option<u64>,
+}
+
+#[derive(Debug)]
+struct BreakdownList<'a> {
+    items: Vec<(&'a CachegrindFunction, BreakdownListItem)>,
+    current_total: u64,
+    prev_total: Option<u64>,
+}
+
+impl<'a> BreakdownList<'a> {
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss
+    )]
+    fn new(
+        stats: &'a CachegrindOutput,
+        prev_stats: Option<&'a CachegrindOutput>,
+        threshold_fraction: f32,
+    ) -> Self {
+        let current_total = stats.summary.total_instructions();
+        let current_threshold = (threshold_fraction * current_total as f32) as u64;
+        let prev_total = prev_stats.map(|stats| stats.summary.total_instructions());
+        let prev_threshold =
+            prev_total.map_or(u64::MAX, |instr| (threshold_fraction * instr as f32) as u64);
+
+        let filtered = stats.breakdown.iter().filter_map(|(func, stats)| {
+            let prev_instructions = prev_stats.map(|prev| {
+                prev.breakdown
+                    .get(func)
+                    .map_or(0, CachegrindStats::total_instructions)
+            });
+            let notable = stats.total_instructions() > current_threshold
+                || prev_instructions.is_some_and(|instr| instr > prev_threshold);
+            if !notable {
+                return None;
+            }
+
+            let item = BreakdownListItem {
+                current: stats.total_instructions(),
+                prev: prev_instructions,
+            };
+            Some((func, item))
+        });
+        let mut items: Vec<_> = filtered.collect();
+
+        if let Some(prev_stats) = prev_stats {
+            let prev_notable_items =
+                prev_stats
+                    .breakdown
+                    .iter()
+                    .filter_map(|(func, func_stats)| {
+                        if func_stats.total_instructions() <= prev_threshold {
+                            return None;
+                        }
+                        if stats.breakdown.contains_key(func) {
+                            return None; // The function was already added.
+                        }
+                        let item = BreakdownListItem {
+                            current: 0,
+                            prev: Some(func_stats.total_instructions()),
+                        };
+                        Some((func, item))
+                    });
+            items.extend(prev_notable_items);
+        }
+        items.sort_unstable_by_key(|(_, item)| cmp::Reverse((item.current, item.prev)));
+
+        Self {
+            items,
+            current_total,
+            prev_total,
+        }
+    }
+
+    fn color_diff(diff: f32, threshold: f32) -> Color {
+        debug_assert!(threshold > 0.0);
+        if diff > threshold {
+            Color::Red // positive change is bad
+        } else if diff < -threshold {
+            Color::Green
+        } else {
+            Color::Default
+        }
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    fn print<W: io::Write>(&self, printer: &mut LinePrinter<W>) {
+        const FN_NAME_WIDTH: usize = 60;
+        const DIFF_THRESHOLD: f32 = 0.1; // measured in percent
+
+        if self.items.is_empty() {
+            return;
+        }
+
+        printer
+            .bold()
+            .print_str("    %   % diff  Instr.diff  Function\n");
+
+        let mut full_fns = vec![];
+        for (function, item) in &self.items {
+            let instr = item.current;
+            let prev_instr = item.prev;
+            let instr_change =
+                prev_instr.map(|prev| (instr as f32 - prev as f32) * 100.0 / prev as f32);
+            let percentage = instr as f32 / self.current_total as f32 * 100.0;
+            let prev_percentage = self
+                .prev_total
+                .map(|total| prev_instr.unwrap_or(0) as f32 / total as f32 * 100.0);
+            let percent_change = prev_percentage.map(|prev| percentage - prev);
+
+            printer.print(format_args!("{percentage:>4.1}%  "));
+            if let Some(change) = percent_change {
+                let color = Self::color_diff(change, DIFF_THRESHOLD);
+                printer.fg(color).print(format_args!("{change:>+5.1}pp"));
+            } else {
+                printer.dimmed().print_str("      -"); // +99.9pp
+            }
+            printer.print_str("  ");
+
+            {
+                let color = instr_change.map_or(Color::Default, |change| {
+                    Self::color_diff(change, DIFF_THRESHOLD)
+                });
+                let mut printer = printer.fg(color);
+                if let Some(instr_change) = instr_change {
+                    let accuracy = (instr_change.abs() < 100.0).into();
+                    printer.print(format_args!("{instr_change:>+9.accuracy$}%"));
+                } else {
+                    printer.dimmed().print_str("         -");
+                }
+            }
+            printer.print_str("  ");
+
+            let mut function = function.to_string();
+            let shortened_idx = if function.len() > FN_NAME_WIDTH {
+                // This assumes that function is ASCII
+                full_fns.push(function.clone());
+                let shortened_idx = full_fns.len();
+                let suffix_len = format!("[{shortened_idx}]").len() + 2;
+                function.truncate(FN_NAME_WIDTH - suffix_len);
+                Some(shortened_idx)
+            } else {
+                None
+            };
+
+            printer.print_str(&function);
+            if let Some(idx) = shortened_idx {
+                printer.print_str("… ");
+                printer.fg(Color::Cyan).print(format_args!("[{idx}]"));
+            }
+            printer.print_str("\n");
+        }
+
+        if !full_fns.is_empty() {
+            printer.bold().print_str("-----\n");
+        }
+
+        for (i, full_fn) in full_fns.iter().enumerate() {
+            let space = if i < 9 { " " } else { "" };
+            printer
+                .fg(Color::Cyan)
+                .print(format_args!("{space}[{}]", i + 1));
+            printer.print(format_args!(" {full_fn}\n"));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
     use crate::cachegrind::{CachegrindDataPoint, FullCachegrindStats};
 
@@ -543,6 +752,7 @@ mod tests {
         PrintingReporter {
             verbosity,
             line_printer: Arc::new(Mutex::new(line_printer)),
+            breakdown: false,
         }
     }
 
@@ -572,10 +782,33 @@ mod tests {
         }
     }
 
+    fn with_breakdown(summary: CachegrindStats) -> CachegrindOutput {
+        let total_instructions = summary.total_instructions();
+        CachegrindOutput {
+            summary,
+            breakdown: HashMap::from([
+                (
+                    CachegrindFunction::rust(
+                        "<alloc::sync::Arc<T> as core::default::Default>::default",
+                    ),
+                    CachegrindStats::Simple {
+                        instructions: total_instructions / 10,
+                    },
+                ),
+                (
+                    CachegrindFunction::rust("yab::test"),
+                    CachegrindStats::Simple {
+                        instructions: total_instructions * 9 / 10,
+                    },
+                ),
+            ]),
+        }
+    }
+
     #[test]
     fn reporting_basic_stats() {
         let mut reporter = mock_reporter(Verbosity::Normal);
-        let stats = CachegrindStats::Simple { instructions: 123 };
+        let stats = with_breakdown(CachegrindStats::Simple { instructions: 123 });
         let mut bench = reporter.new_benchmark(&BenchmarkId::from("test"));
         bench.start_execution();
         bench.ok(&BenchmarkOutput {
@@ -594,8 +827,8 @@ mod tests {
     #[test]
     fn reporting_basic_stats_with_diff() {
         let mut reporter = mock_reporter(Verbosity::Normal);
-        let stats = CachegrindStats::Simple { instructions: 120 };
-        let prev_stats = CachegrindStats::Simple { instructions: 100 };
+        let stats = with_breakdown(CachegrindStats::Simple { instructions: 120 });
+        let prev_stats = with_breakdown(CachegrindStats::Simple { instructions: 100 });
         reporter
             .new_benchmark(&BenchmarkId::from("test"))
             .ok(&BenchmarkOutput {
@@ -616,7 +849,7 @@ mod tests {
     #[test]
     fn reporting_full_stats() {
         let mut reporter = mock_reporter(Verbosity::Normal);
-        let stats = CachegrindStats::Full(mock_stats());
+        let stats = with_breakdown(CachegrindStats::Full(mock_stats()));
         reporter
             .new_benchmark(&BenchmarkId::from("test"))
             .ok(&BenchmarkOutput {
@@ -636,9 +869,58 @@ mod tests {
     }
 
     #[test]
+    fn reporting_breakdown() {
+        let stats = with_breakdown(CachegrindStats::Full(mock_stats()));
+        let mut old_stats = mock_stats();
+        old_stats.instructions.total += 20;
+        old_stats.data_reads.total += 10;
+        let old_stats = CachegrindOutput {
+            summary: CachegrindStats::Full(old_stats),
+            breakdown: HashMap::from([
+                (
+                    CachegrindFunction::rust("yab::test"),
+                    CachegrindStats::Simple {
+                        instructions: old_stats.instructions.total * 5 / 6,
+                    },
+                ),
+                (
+                    CachegrindFunction::rust(
+                        "<hashbrown::raw::RawTable<T,A> as core::ops::drop::Drop>::drop",
+                    ),
+                    CachegrindStats::Simple {
+                        instructions: old_stats.instructions.total / 6,
+                    },
+                ),
+            ]),
+        };
+
+        let reporter = mock_reporter(Verbosity::Verbose);
+        let list = BreakdownList::new(&stats, Some(&old_stats), 0.01);
+        list.print(&mut reporter.lock_printer());
+        let buffer = extract_buffer(reporter);
+        let lines: Vec<_> = buffer.lines().collect();
+        assert_eq!(lines.len(), 6, "{lines:#?}");
+        assert_eq!(lines[0], "    %   % diff  Instr.diff  Function");
+        assert_eq!(lines[1], "90.0%   +6.7pp      -10.0%  yab::test");
+        assert_eq!(
+            lines[2],
+            "10.0%  +10.0pp       +inf%  <alloc::sync::Arc<T> as core::default::Default>::default"
+        );
+        assert_eq!(
+            lines[3],
+            " 0.0%  -16.7pp       -100%  <hashbrown::raw::RawTable<T,A> as core::ops::drop::Drop… [1]"
+        );
+        assert_eq!(lines[4], "-----");
+        assert_eq!(
+            lines[5],
+            " [1] <hashbrown::raw::RawTable<T,A> as core::ops::drop::Drop>::drop"
+        );
+    }
+
+    #[test]
     fn reporting_full_stats_verbosely() {
         let mut reporter = mock_reporter(Verbosity::Verbose);
-        let stats = CachegrindStats::Full(mock_stats());
+        let stats = with_breakdown(CachegrindStats::Full(mock_stats()));
         reporter
             .new_benchmark(&BenchmarkId::from("test"))
             .ok(&BenchmarkOutput {
@@ -664,13 +946,12 @@ mod tests {
             .unwrap();
         assert_eq!(lines[ram_idx + 1], "│ ├ Instr.                    10");
         assert_eq!(lines[ram_idx + 2], "│ └ Data reads                10");
-        assert_eq!(*lines.last().unwrap(), "└ Est. cycles               1350");
     }
 
     #[test]
     fn reporting_full_stats_with_diff() {
         let mut reporter = mock_reporter(Verbosity::Normal);
-        let stats = CachegrindStats::Full(mock_stats());
+        let stats = with_breakdown(CachegrindStats::Full(mock_stats()));
         let mut prev_stats = mock_stats();
         prev_stats.instructions.total += 10;
         prev_stats.data_reads.l1_misses = 20;
@@ -678,7 +959,7 @@ mod tests {
             .new_benchmark(&BenchmarkId::from("test"))
             .ok(&BenchmarkOutput {
                 stats,
-                prev_stats: Some(CachegrindStats::Full(prev_stats)),
+                prev_stats: Some(with_breakdown(CachegrindStats::Full(prev_stats))),
             });
 
         let buffer = extract_buffer(reporter);

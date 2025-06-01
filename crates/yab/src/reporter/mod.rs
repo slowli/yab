@@ -9,7 +9,7 @@ pub(crate) use self::{
     printer::{PrintingReporter, Verbosity},
     seq::SeqReporter,
 };
-use crate::{BenchmarkId, CachegrindStats};
+use crate::{cachegrind::CachegrindOutput, BenchmarkId, CachegrindStats};
 
 mod printer;
 mod seq;
@@ -20,9 +20,9 @@ mod seq;
 #[non_exhaustive]
 pub struct BenchmarkOutput {
     /// Latest / current stats for the benchmark.
-    pub stats: CachegrindStats,
+    pub stats: CachegrindOutput,
     /// Previous stats for the benchmark.
-    pub prev_stats: Option<CachegrindStats>,
+    pub prev_stats: Option<CachegrindOutput>,
 }
 
 /// Reporter for benchmarking output that allows to extend or modify benchmarking logic.
