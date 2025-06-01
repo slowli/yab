@@ -53,15 +53,15 @@
           <div xmlns="http://www.w3.org/1999/xhtml" class="container">
             <div class="input" data-exit-status="0"><pre><span class="prompt">$</span> cargo bench --bench all -- --quiet --breakdown collect/hash_set</pre></div>
             <div class="output"><pre>[<span class="bold fg10">√</span>] collect/hash_set<span class="dimmed"> (10ms)</span>
-├ Instructions           2352684
-└ Est. cycles            3094746
+├ Instructions           1582867
+└ Est. cycles            1945018
 <span class="bold">    %   % diff  Instr.diff  Function
-</span>37.0%  <span class="dimmed">      -</span>  <span class="dimmed">         -</span>  core::hash::BuildHasher::hash_one
-30.0%  <span class="dimmed">      -</span>  <span class="dimmed">         -</span>  hashbrown::map::HashMap&lt;K,V,S,A&gt;::insert
-23.8%  <span class="dimmed">      -</span>  <span class="dimmed">         -</span>  &lt;core::hash::sip::Hasher&lt;S&gt; as core::hash::Hasher&gt;::write
- 8.5%  <span class="dimmed">      -</span>  <span class="dimmed">         -</span>  &lt;core::iter::adapters::map::Map&lt;I,F&gt; as core::iter::tra… <span class="fg14">[1]</span>
+</span>86.3%  <span class="dimmed">      -</span>  <span class="dimmed">         -</span>  hashbrown::map::HashMap&lt;K,V,S,A&gt;::insert
+12.6%  <span class="dimmed">      -</span>  <span class="dimmed">         -</span>  &lt;core::iter::adapters::map::Map&lt;I,F&gt; as core::iter::tra… <span class="fg14">[1]</span>
+ 1.0%  <span class="dimmed">      -</span>  <span class="dimmed">         -</span>  __memset_avx2_unaligned_erms@./string/../sysdeps/x86_64… <span class="fg14">[2]</span>
 <span class="bold">-----
 </span><span class="fg14"> [1]</span> &lt;core::iter::adapters::map::Map&lt;I,F&gt; as core::iter::traits::iterator::Iterator&gt;::fold
+<span class="fg14"> [2]</span> __memset_avx2_unaligned_erms@./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S
 </pre></div>
           </div>
         </foreignObject>

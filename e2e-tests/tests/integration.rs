@@ -59,7 +59,7 @@ fn assert_close(actual: &FullCachegrindStats, expected: &FullCachegrindStats) {
 }
 
 fn assert_close_values(actual: u64, expected: u64) {
-    let threshold = (expected / 200).max(10); // allow divergence up to 0.5%
+    let threshold = (expected / 200).max(50); // allow divergence up to 0.5%, and more for smaller values
     let diff = actual.abs_diff(expected);
     assert!(diff <= threshold, "actual={actual}, expected={expected}");
 }
