@@ -3,7 +3,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    fs, io,
+    env, fs, io,
     path::Path,
     process::{Command, Stdio},
     thread,
@@ -210,11 +210,29 @@ fn assert_initial_outputs(outputs: &HashMap<String, BenchmarkOutput>) {
     let long_random_walk_output = AccessSummary::from(*long_random_walk_stats);
     assert!(long_random_walk_output.ram_accesses > 1_000);
 
-    if !cfg!(debug_assertions) {
-        for (name, expected_stats) in &EXPECTED_STATS.default {
-            println!("Comparing bench {name}");
-            let actual_stats = outputs[name].stats.summary.as_full().unwrap();
+    assert_reference_stats(outputs, true);
+}
+
+fn assert_reference_stats(outputs: &HashMap<String, BenchmarkOutput>, full: bool) {
+    if cfg!(debug_assertions) {
+        return;
+    }
+
+    let should_skip_complex_stats = env::var("YAB_SKIP_COMPLEX_STATS").is_ok();
+    for (name, expected_stats) in &EXPECTED_STATS.default {
+        if name == "collect/hash_set" && should_skip_complex_stats {
+            continue;
+        }
+        println!("Comparing bench {name}");
+        let summary = &outputs[name].stats.summary;
+        if full {
+            let actual_stats = summary.as_full().unwrap();
             assert_close(actual_stats, expected_stats);
+        } else {
+            assert!(summary.as_full().is_none());
+            let expected_instructions = expected_stats.instructions.total;
+            let actual_instructions = summary.total_instructions();
+            assert_close_values(actual_instructions, expected_instructions);
         }
     }
 }
@@ -485,12 +503,5 @@ fn disabling_cache_simulation() {
         "short={short_instructions}, guard={guard_instructions}"
     );
 
-    if !cfg!(debug_assertions) {
-        for (name, expected_stats) in &EXPECTED_STATS.default {
-            println!("Comparing bench {name}");
-            let expected_instructions = expected_stats.instructions.total;
-            let actual_instructions = outputs[name].stats.summary.total_instructions();
-            assert_close_values(actual_instructions, expected_instructions);
-        }
-    }
+    assert_reference_stats(&outputs, false);
 }

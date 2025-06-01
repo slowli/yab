@@ -43,6 +43,10 @@ jobs:
         run: cargo bench --workspace
       - name: Run tests (no features)
         run: cargo test --release --workspace --all-targets
+        env:
+          # Skip comparing stats for complex benches (e.g., hash set construction). The outputs may differ significantly
+          # depending on the Rust version.
+          YAB_SKIP_COMPLEX_STATS: true
 
   build:
     runs-on: ubuntu-latest
