@@ -9,8 +9,8 @@ on:
 env:
   # New valgrind version to install
   valgrind: 3.23.0
-  msrv: 1.81.0
-  nightly: nightly-2025-04-27
+  msrv: 1.85.0
+  nightly: nightly-2025-11-02
 
 jobs:
   build-msrv:
