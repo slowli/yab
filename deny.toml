@@ -20,11 +20,10 @@ confidence-threshold = 0.8
 multiple-versions = "deny"
 wildcards = "deny"
 allow-wildcard-paths = true
-skip-tree = []
+skip-tree = [
+  { name = "windows-sys", version = "^0.60" },
+]
 
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-
-[sources.allow-org]
-github = ["slowli"]

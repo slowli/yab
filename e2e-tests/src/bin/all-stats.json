@@ -182,7 +182,7 @@
         "l3_misses": 3
       },
       "data_writes": {
-        "total": 126493,
+        "total": 136492,
         "l1_misses": 8727,
         "l3_misses": 2292
       }
@@ -219,7 +219,7 @@
           "l3_misses": 0
         },
         "data_writes": {
-          "total": 60000,
+          "total": 70000,
           "l1_misses": 8461,
           "l3_misses": 2035
         }

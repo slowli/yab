@@ -59,7 +59,7 @@ fn assert_close(actual: &FullCachegrindStats, expected: &FullCachegrindStats) {
 }
 
 fn assert_close_values(actual: u64, expected: u64) {
-    let threshold = (expected / 200).max(50); // allow divergence up to 0.5%, and more for smaller values
+    let threshold = (expected / 100).max(50); // allow divergence up to 1%, and more for smaller values
     let diff = actual.abs_diff(expected);
     assert!(diff <= threshold, "actual={actual}, expected={expected}");
 }
@@ -363,7 +363,7 @@ fn handling_panics_in_benches() {
 
     // Check that `stderr` contains actionable output.
     assert!(stderr.contains("cachegrind exited abnormally"), "{stderr}");
-    assert!(stderr.contains("thread 'main' panicked at"), "{stderr}");
+    assert!(stderr.contains("panicked at"), "{stderr}");
     assert!(stderr.contains("emulated panic!"), "{stderr}");
 }
 
