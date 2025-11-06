@@ -2,7 +2,6 @@
 
 use std::{any::Any, fmt};
 
-#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 pub(crate) use self::{
@@ -11,14 +10,12 @@ pub(crate) use self::{
 };
 use crate::{cachegrind::CachegrindOutput, BenchmarkId, CachegrindStats};
 
-#[cfg(feature = "baselines")]
 pub(crate) mod baseline;
 mod printer;
 mod seq;
 
 /// Output produced by the [`Bencher`](crate::Bencher) for a single benchmark.
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct BenchmarkOutput {
     /// Latest / current stats for the benchmark.

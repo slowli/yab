@@ -81,11 +81,9 @@ pub(crate) struct BenchOptions {
     pub breakdown: bool,
 
     /// Saves the full results as a named baseline.
-    #[cfg(feature = "baselines")]
     #[arg(long)]
     save_baseline: Option<PathBuf>,
     /// Compares results against the specified baseline.
-    #[cfg(feature = "baselines")]
     #[arg(long)]
     baseline: Option<PathBuf>,
 
@@ -165,7 +163,6 @@ impl BenchOptions {
         command
     }
 
-    #[cfg(feature = "baselines")]
     pub fn save_baseline_path(&self) -> Option<PathBuf> {
         let path = self.save_baseline.as_ref()?;
         // If --save-baseline specifies an absolute path, it will completely overwrite the save dir,
@@ -173,17 +170,11 @@ impl BenchOptions {
         Some(self.cachegrind_out_dir.join("_baselines").join(path))
     }
 
-    #[cfg(feature = "baselines")]
     pub fn baseline_path(&self) -> Option<PathBuf> {
         let path = self.baseline.as_ref()?;
         // If --save-baseline specifies an absolute path, it will completely overwrite the save dir,
         // just as needed
         Some(self.cachegrind_out_dir.join("_baselines").join(path))
-    }
-
-    #[cfg(not(feature = "baselines"))]
-    pub fn baseline_path(&self) -> Option<&Path> {
-        None
     }
 }
 

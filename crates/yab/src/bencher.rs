@@ -15,7 +15,8 @@ use crate::{
     cachegrind::{CachegrindOutput, SpawnArgs},
     options::{BenchOptions, CachegrindOptions, IdMatcher, Options},
     reporter::{
-        BenchmarkOutput, BenchmarkReporter, NoOpReporter, PrintingReporter, Reporter, SeqReporter,
+        baseline::BaselineSaver, BenchmarkOutput, BenchmarkReporter, NoOpReporter,
+        PrintingReporter, Reporter, SeqReporter,
     },
     utils::Semaphore,
     BenchmarkId, Capture,
@@ -141,15 +142,9 @@ impl MainBencher {
         };
 
         let mut reporter = SeqReporter(vec![Box::new(reporter)]);
-
-        #[cfg(feature = "baselines")]
-        {
-            use crate::reporter::baseline::BaselineSaver;
-
-            if let Some(path) = options.save_baseline_path() {
-                let saver = BaselineSaver::new(path, &options);
-                reporter.0.push(Box::new(saver));
-            }
+        if let Some(path) = options.save_baseline_path() {
+            let saver = BaselineSaver::new(path, &options);
+            reporter.0.push(Box::new(saver));
         }
 
         Self {
@@ -366,7 +361,6 @@ impl CachegrindRunner {
             })
     }
 
-    #[cfg(feature = "baselines")]
     fn ensure_baseline(&mut self, path: &Path) -> &Baseline {
         self.baseline
             .get_or_init(|| match Self::load_baseline(path) {
@@ -381,7 +375,6 @@ impl CachegrindRunner {
             })
     }
 
-    #[cfg(feature = "baselines")]
     fn load_baseline(path: &Path) -> std::io::Result<Baseline> {
         use std::io::BufReader;
 

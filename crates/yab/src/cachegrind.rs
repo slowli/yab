@@ -13,7 +13,6 @@ use std::{
     str::FromStr,
 };
 
-#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::{options::CachegrindOptions, BenchmarkId};
@@ -176,8 +175,7 @@ pub(crate) fn spawn_instrumented(args: SpawnArgs) -> Result<CachegrindOutput, Ca
 }
 
 /// Information about a particular type of operations (instruction reads, data reads / writes).
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub struct CachegrindDataPoint {
     /// Total number of operations performed.
     pub total: u64,
@@ -234,8 +232,7 @@ impl ops::Mul<u64> for CachegrindDataPoint {
 }
 
 /// Full `cachegrind` stats including cache simulation.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub struct FullCachegrindStats {
     /// Instruction-related statistics.
     pub instructions: CachegrindDataPoint,
@@ -314,9 +311,8 @@ impl ops::Mul<u64> for FullCachegrindStats {
 }
 
 /// Raw summary output produced by `cachegrind`.
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "serde", serde(untagged))]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
 #[non_exhaustive]
 pub enum CachegrindStats {
     /// Stats produced by `cachegrind` with disabled cache simulation.
@@ -395,15 +391,11 @@ impl CachegrindStats {
     }
 }
 
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct CachegrindOutput {
     pub summary: CachegrindStats,
-    #[cfg_attr(
-        feature = "serde",
-        serde(default, skip_serializing_if = "HashMap::is_empty")
-    )]
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub breakdown: HashMap<CachegrindFunction, CachegrindStats>,
 }
 
@@ -702,7 +694,6 @@ impl Drop for CaptureGuard {
     }
 }
 
-#[cfg(feature = "serde")]
 mod serde_helpers {
     use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
@@ -783,7 +774,6 @@ mod tests {
         assert_eq!(stats.data_writes.l3_misses, 1_210);
     }
 
-    #[cfg(feature = "serde")]
     #[test]
     fn serializing_stats() {
         let json = serde_json::json!({
