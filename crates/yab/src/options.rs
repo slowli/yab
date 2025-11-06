@@ -1,4 +1,14 @@
-use std::{env, io, io::IsTerminal, num, num::NonZeroUsize, process, process::Command};
+use std::{
+    env,
+    ffi::OsString,
+    io,
+    io::IsTerminal,
+    num,
+    num::NonZeroUsize,
+    path::{Path, PathBuf},
+    process,
+    process::Command,
+};
 
 use clap::{ColorChoice, Parser};
 use regex::Regex;
@@ -47,7 +57,7 @@ pub(crate) struct BenchOptions {
     pub max_iterations: u64,
     /// Base directory to put cachegrind outputs into. Will be created if absent.
     #[arg(long, default_value = "target/yab", env = "CACHEGRIND_OUT_DIR")]
-    pub cachegrind_out_dir: String,
+    pub cachegrind_out_dir: PathBuf,
     /// Maximum number of benchmarks to run in parallel.
     #[arg(
         long,
@@ -69,6 +79,11 @@ pub(crate) struct BenchOptions {
     /// Output stats breakdown by function.
     #[arg(long)]
     pub breakdown: bool,
+
+    /// Saves the full results as a named baseline.
+    #[cfg(feature = "baselines")]
+    #[arg(long)]
+    pub save_baseline: Option<PathBuf>,
 
     /// List all benchmarks instead of running them.
     #[arg(long, conflicts_with = "print")]
@@ -137,11 +152,21 @@ impl BenchOptions {
         })
     }
 
-    pub fn cachegrind_wrapper(&self, out_file: &str) -> Command {
+    pub fn cachegrind_wrapper(&self, out_file: &Path) -> Command {
         let mut command = Command::new(&self.cachegrind_wrapper[0]);
         command.args(&self.cachegrind_wrapper[1..]);
-        command.arg(format!("--cachegrind-out-file={out_file}"));
+        let mut out_file_arg = OsString::from("--cachegrind-out-file=");
+        out_file_arg.push(out_file);
+        command.arg(out_file_arg);
         command
+    }
+
+    #[cfg(feature = "baselines")]
+    pub fn save_baseline_path(&self) -> Option<PathBuf> {
+        let dir = self.save_baseline.as_ref()?;
+        // If --save-baseline specifies an absolute path, it will completely overwrite the save dir,
+        // just as needed
+        Some(self.cachegrind_out_dir.join("_baselines").join(dir))
     }
 }
 

@@ -11,6 +11,8 @@ pub(crate) use self::{
 };
 use crate::{cachegrind::CachegrindOutput, BenchmarkId, CachegrindStats};
 
+#[cfg(feature = "baselines")]
+pub(crate) mod baseline;
 mod printer;
 mod seq;
 

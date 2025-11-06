@@ -1,6 +1,6 @@
 //! [`Bencher`] and tightly related types.
 
-use std::{env, fs, mem, panic, process, sync::Arc, thread, thread::JoinHandle};
+use std::{env, fs, mem, panic, path::Path, process, sync::Arc, thread, thread::JoinHandle};
 
 use crate::{
     cachegrind,
@@ -127,11 +127,23 @@ impl MainBencher {
             }
         };
 
+        let mut reporter = SeqReporter(vec![Box::new(reporter)]);
+
+        #[cfg(feature = "baselines")]
+        {
+            use crate::reporter::baseline::BaselineSaver;
+
+            if let Some(path) = options.save_baseline_path() {
+                let saver = BaselineSaver::new(path, &options);
+                reporter.0.push(Box::new(saver));
+            }
+        }
+
         Self {
             options,
             id_matcher,
             mode,
-            reporter: SeqReporter(vec![Box::new(reporter)]),
+            reporter,
         }
     }
 
@@ -227,19 +239,17 @@ impl CachegrindRunner {
     ///    `(n + 1) * setup + (n + 1) * bench + const`.
     /// 4. Subtract baseline stats from the full stats. The difference is equal to `bench`.
     fn run_benchmark(mut self) {
-        let final_baseline_path = format!(
-            "{}/{}.baseline.cachegrind",
-            self.options.cachegrind_out_dir, self.id
-        );
-        let final_full_path = format!("{}/{}.cachegrind", self.options.cachegrind_out_dir, self.id);
+        let out_dir = &self.options.cachegrind_out_dir;
+        let baseline_path = out_dir.join(format!("{}.baseline.cachegrind~", self.id));
+        let full_path = out_dir.join(format!("{}.cachegrind~", self.id));
+        let final_baseline_path = out_dir.join(format!("{}.baseline.cachegrind", self.id));
+        let final_full_path = out_dir.join(format!("{}.cachegrind", self.id));
+
         let old_baseline = self.load_and_backup_output(&final_baseline_path);
         let prev_stats = old_baseline.and_then(|baseline| {
             let full = self.load_and_backup_output(&final_full_path)?;
             Some(full - baseline)
         });
-
-        let baseline_path = format!("{final_baseline_path}~");
-        let full_path = format!("{final_full_path}~");
 
         // Use `baseline_path` in case we won't run the baseline after calibration
         let command = self.options.cachegrind_wrapper(&baseline_path);
@@ -299,11 +309,12 @@ impl CachegrindRunner {
     }
 
     fn report_benchmark_result(mut self) {
-        let baseline_path = format!(
-            "{}/{}.baseline.cachegrind",
-            self.options.cachegrind_out_dir, self.id
-        );
-        let full_path = format!("{}/{}.cachegrind", self.options.cachegrind_out_dir, self.id);
+        let out_dir = &self.options.cachegrind_out_dir;
+        let baseline_path = out_dir.join(format!("{}.baseline.cachegrind", self.id));
+        let full_path = out_dir.join(format!("{}.cachegrind", self.id));
+        let old_baseline_path = out_dir.join(format!("{}.baseline.cachegrind.old", self.id));
+        let old_full_path = out_dir.join(format!("{}.cachegrind.old", self.id));
+
         let Some(baseline) = self.load_output(&baseline_path) else {
             self.reporter.warning(&"no data for benchmark");
             return;
@@ -314,8 +325,6 @@ impl CachegrindRunner {
         };
         let stats = full - baseline;
 
-        let old_baseline_path = format!("{baseline_path}.old");
-        let old_full_path = format!("{full_path}.old");
         let old_baseline = self.load_output(&old_baseline_path);
         let prev_stats =
             old_baseline.and_then(|baseline| Some(self.load_output(&old_full_path)? - baseline));
@@ -323,7 +332,7 @@ impl CachegrindRunner {
         self.reporter.ok(&BenchmarkOutput { stats, prev_stats });
     }
 
-    fn load_output(&mut self, path: &str) -> Option<CachegrindOutput> {
+    fn load_output(&mut self, path: &Path) -> Option<CachegrindOutput> {
         fs::File::open(path)
             .ok()
             .and_then(|file| match CachegrindOutput::new(file, path) {
@@ -335,12 +344,19 @@ impl CachegrindRunner {
             })
     }
 
-    fn load_and_backup_output(&mut self, path: &str) -> Option<CachegrindOutput> {
+    fn load_and_backup_output(&mut self, path: &Path) -> Option<CachegrindOutput> {
         let summary = self.load_output(path);
         if summary.is_some() {
-            let backup_path = format!("{path}.old");
+            let mut backup_path = path.to_owned();
+            // `unwrap()`s are safe because we control filenames
+            let current_extension = backup_path.extension().unwrap().to_str().unwrap();
+            backup_path.set_extension(format!("{current_extension}.old"));
+
             if let Err(err) = fs::copy(path, &backup_path) {
-                let err = format!("Failed backing up cachegrind baseline `{path}`: {err}");
+                let err = format!(
+                    "Failed backing up cachegrind baseline `{path}`: {err}",
+                    path = path.display()
+                );
                 self.reporter.warning(&err);
             }
         }

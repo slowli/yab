@@ -7,7 +7,7 @@ use std::{
     fmt, fs, io,
     io::BufRead,
     ops,
-    path::Path,
+    path::{Path, PathBuf},
     process,
     process::{Command, ExitStatus},
     str::FromStr,
@@ -62,21 +62,21 @@ pub(crate) enum CachegrindError {
     )]
     NoCachegrind,
 
-    #[error("I/O error creating output directory `{path}`: {error}")]
+    #[error("I/O error creating output directory `{path}`: {error}", path = path.display())]
     CreateOutputDir {
-        path: String,
+        path: PathBuf,
         #[source]
         error: io::Error,
     },
-    #[error("I/O error reading cachegrind output at `{out_path}`: {error}")]
+    #[error("I/O error reading cachegrind output at `{path}`: {error}", path = out_path.display())]
     Read {
-        out_path: String,
+        out_path: PathBuf,
         #[source]
         error: io::Error,
     },
-    #[error("Failed parsing cachegrind output at `{out_path}`: {message}")]
+    #[error("Failed parsing cachegrind output at `{path}`: {message}", path = out_path.display())]
     Parse {
-        out_path: String,
+        out_path: PathBuf,
         message: Cow<'static, str>,
     },
 }
@@ -88,7 +88,7 @@ enum ParseError {
 }
 
 impl ParseError {
-    fn generalize(self, out_path: String) -> CachegrindError {
+    fn generalize(self, out_path: PathBuf) -> CachegrindError {
         match self {
             Self::Io(error) => CachegrindError::Read { out_path, error },
             Self::Custom(message) => CachegrindError::Parse { out_path, message },
@@ -130,7 +130,7 @@ pub(crate) fn check() -> Result<String, CachegrindError> {
 #[derive(Debug)]
 pub(crate) struct SpawnArgs<'a> {
     pub command: Command,
-    pub out_path: &'a str,
+    pub out_path: &'a Path,
     pub this_executable: &'a str,
     pub id: &'a BenchmarkId,
     pub iterations: u64,
@@ -147,9 +147,9 @@ pub(crate) fn spawn_instrumented(args: SpawnArgs) -> Result<CachegrindOutput, Ca
         is_baseline,
     } = args;
 
-    if let Some(parent_dir) = Path::new(out_path).parent() {
+    if let Some(parent_dir) = out_path.parent() {
         fs::create_dir_all(parent_dir).map_err(|error| CachegrindError::CreateOutputDir {
-            path: parent_dir.display().to_string(),
+            path: parent_dir.to_owned(),
             error,
         })?;
     }
@@ -400,11 +400,15 @@ impl CachegrindStats {
 #[non_exhaustive]
 pub struct CachegrindOutput {
     pub summary: CachegrindStats,
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "HashMap::is_empty")
+    )]
     pub breakdown: HashMap<CachegrindFunction, CachegrindStats>,
 }
 
 impl CachegrindOutput {
-    pub(crate) fn new(file: fs::File, path: &str) -> Result<Self, CachegrindError> {
+    pub(crate) fn new(file: fs::File, path: &Path) -> Result<Self, CachegrindError> {
         let reader = io::BufReader::new(file);
         Self::read(reader).map_err(|err| err.generalize(path.to_owned()))
     }

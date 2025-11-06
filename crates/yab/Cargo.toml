@@ -25,6 +25,7 @@ thiserror.workspace = true
 
 # Enables serialization for benchmark outputs.
 serde = { workspace = true, features = ["derive"], optional = true }
+serde_json = { workspace = true, optional = true }
 
 [dev-dependencies]
 assert_matches.workspace = true
@@ -37,3 +38,5 @@ default = []
 # Enables cachegrind instrumentation. Allows to get more precise results, but requires
 # cachegrind >=3.22.0.
 instrumentation = ["dep:crabgrind"]
+# Enables basline support
+baselines = ["serde", "dep:serde_json"]
