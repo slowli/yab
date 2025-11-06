@@ -485,7 +485,12 @@ impl<W: io::Write + fmt::Debug + Send> super::BenchmarkReporter for BenchmarkRep
         );
 
         if self.parent.breakdown {
-            let breakdown = BreakdownList::new(stats, prev_stats.as_ref(), 0.01);
+            // Do not compare against previous stats w/o breakdown (e.g., if it belongs to a named baseline
+            // w/o captured breakdown).
+            let filtered_prev_stats = prev_stats
+                .as_ref()
+                .filter(|stats| !stats.breakdown.is_empty());
+            let breakdown = BreakdownList::new(stats, filtered_prev_stats, 0.01);
             breakdown.print(&mut printer);
         }
     }

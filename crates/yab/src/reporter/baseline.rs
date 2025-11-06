@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     fs,
     io::BufWriter,
     path::PathBuf,
@@ -7,13 +6,11 @@ use std::{
 };
 
 use crate::{
-    cachegrind::CachegrindOutput,
+    bencher::Baseline,
     options::BenchOptions,
     reporter::{BenchmarkOutput, BenchmarkReporter, Reporter},
     BenchmarkId,
 };
-
-type Baseline = HashMap<String, CachegrindOutput>;
 
 #[derive(Debug)]
 pub(crate) struct BaselineSaver {
@@ -42,6 +39,15 @@ impl Reporter for BaselineSaver {
     }
 
     fn ok(self: Box<Self>) {
+        if let Some(parent_dir) = self.out_path.parent() {
+            fs::create_dir_all(parent_dir).unwrap_or_else(|err| {
+                panic!(
+                    "failed creating parent dir for baseline file `{}`: {err}",
+                    self.out_path.display()
+                );
+            });
+        }
+
         let writer = fs::File::create(&self.out_path).unwrap_or_else(|err| {
             panic!(
                 "failed creating baseline file `{}`: {err}",

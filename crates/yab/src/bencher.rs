@@ -1,15 +1,27 @@
 //! [`Bencher`] and tightly related types.
 
-use std::{env, fs, mem, panic, path::Path, process, sync::Arc, thread, thread::JoinHandle};
+use std::{
+    collections::HashMap,
+    env, fs, mem, panic,
+    path::Path,
+    process,
+    sync::{Arc, OnceLock},
+    thread,
+    thread::JoinHandle,
+};
 
 use crate::{
     cachegrind,
     cachegrind::{CachegrindOutput, SpawnArgs},
     options::{BenchOptions, CachegrindOptions, IdMatcher, Options},
-    reporter::{BenchmarkOutput, BenchmarkReporter, PrintingReporter, Reporter, SeqReporter},
+    reporter::{
+        BenchmarkOutput, BenchmarkReporter, NoOpReporter, PrintingReporter, Reporter, SeqReporter,
+    },
     utils::Semaphore,
     BenchmarkId, Capture,
 };
+
+pub(crate) type Baseline = HashMap<String, CachegrindOutput>;
 
 /// Mode in which the bencher is currently executing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -71,6 +83,7 @@ struct MainBencher {
     id_matcher: IdMatcher,
     mode: BenchModeData,
     reporter: SeqReporter,
+    baseline: Arc<OnceLock<Baseline>>,
 }
 
 impl Drop for MainBencher {
@@ -144,6 +157,7 @@ impl MainBencher {
             id_matcher,
             mode,
             reporter,
+            baseline: Arc::default(),
         }
     }
 
@@ -178,6 +192,7 @@ impl MainBencher {
                     this_executable: this_executable.to_owned(),
                     reporter: self.reporter.new_benchmark(&id),
                     id,
+                    baseline: self.baseline.clone(),
                 };
 
                 if jobs_semaphore.capacity() == 1 {
@@ -201,6 +216,7 @@ impl MainBencher {
                     // `this_executable` isn't used, so it's fine to set it to an empty string
                     this_executable: String::new(),
                     id,
+                    baseline: self.baseline.clone(),
                 };
                 executor.report_benchmark_result();
             }
@@ -215,12 +231,13 @@ struct CachegrindRunner {
     this_executable: String,
     reporter: Box<dyn BenchmarkReporter>,
     id: BenchmarkId,
+    baseline: Arc<OnceLock<Baseline>>,
 }
 
 macro_rules! unwrap_summary {
     ($events:expr, $result:expr) => {
         match $result {
-            Ok(stats) => stats,
+            Ok(value) => value,
             Err(err) => {
                 $events.error(&err);
                 process::exit(1);
@@ -245,11 +262,16 @@ impl CachegrindRunner {
         let final_baseline_path = out_dir.join(format!("{}.baseline.cachegrind", self.id));
         let final_full_path = out_dir.join(format!("{}.cachegrind", self.id));
 
-        let old_baseline = self.load_and_backup_output(&final_baseline_path);
-        let prev_stats = old_baseline.and_then(|baseline| {
-            let full = self.load_and_backup_output(&final_full_path)?;
-            Some(full - baseline)
-        });
+        let prev_stats = if let Some(path) = self.options.baseline_path() {
+            let id = self.id.to_string();
+            self.ensure_baseline(&path).get(&id).cloned()
+        } else {
+            let old_baseline = self.load_and_backup_output(&final_baseline_path);
+            old_baseline.and_then(|baseline| {
+                let full = self.load_and_backup_output(&final_full_path)?;
+                Some(full - baseline)
+            })
+        };
 
         // Use `baseline_path` in case we won't run the baseline after calibration
         let command = self.options.cachegrind_wrapper(&baseline_path);
@@ -342,6 +364,29 @@ impl CachegrindRunner {
                     None
                 }
             })
+    }
+
+    #[cfg(feature = "baselines")]
+    fn ensure_baseline(&mut self, path: &Path) -> &Baseline {
+        self.baseline
+            .get_or_init(|| match Self::load_baseline(path) {
+                Ok(baseline) => baseline,
+                Err(err) => {
+                    mem::replace(&mut self.reporter, Box::new(NoOpReporter)).error(&format!(
+                        "failed reading baseline from {}: {err}",
+                        path.display()
+                    ));
+                    process::exit(1);
+                }
+            })
+    }
+
+    #[cfg(feature = "baselines")]
+    fn load_baseline(path: &Path) -> std::io::Result<Baseline> {
+        use std::io::BufReader;
+
+        let reader = fs::File::open(path)?;
+        serde_json::from_reader(BufReader::new(reader)).map_err(Into::into)
     }
 
     fn load_and_backup_output(&mut self, path: &Path) -> Option<CachegrindOutput> {

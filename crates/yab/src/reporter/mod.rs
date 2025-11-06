@@ -110,3 +110,18 @@ pub trait BenchmarkReporter: Send + fmt::Debug {
         // do nothing
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct NoOpReporter;
+
+impl Reporter for NoOpReporter {
+    fn new_benchmark(&mut self, _id: &BenchmarkId) -> Box<dyn BenchmarkReporter> {
+        Box::new(Self)
+    }
+}
+
+impl BenchmarkReporter for NoOpReporter {
+    fn ok(self: Box<Self>, _output: &BenchmarkOutput) {
+        // Do nothing
+    }
+}
