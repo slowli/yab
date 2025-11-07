@@ -1,5 +1,5 @@
 use std::{
-    env,
+    env, error,
     ffi::OsString,
     io,
     io::IsTerminal,
@@ -32,7 +32,32 @@ const DEFAULT_CACHEGRIND_WRAPPER: &[&str] = &[
     "--LL=8388608,16,64",
 ];
 
-// FIXME: add validations
+fn positive_u64(raw: &str) -> Result<u64, Box<dyn error::Error + Send + Sync>> {
+    let val = raw.parse::<u64>()?;
+    if val == 0 {
+        Err("must be a positive number".into())
+    } else {
+        Ok(val)
+    }
+}
+
+fn f64_ratio(mut raw: &str) -> Result<f64, Box<dyn error::Error + Send + Sync>> {
+    let mut scale = 1.0;
+    if let Some(percent) = raw.strip_suffix('%') {
+        scale = 0.01;
+        raw = percent;
+    }
+
+    let val = raw.parse::<f64>()? * scale;
+    if !val.is_normal() {
+        return Err("must be a finite number".into());
+    }
+    if !(0.0..=1.0).contains(&val) {
+        return Err("ratio must be between 0 and 1".into());
+    }
+    Ok(val)
+}
+
 #[allow(clippy::struct_excessive_bools)] // fine for command-line args
 #[derive(Debug, Clone, Parser)]
 pub(crate) struct BenchOptions {
@@ -54,10 +79,10 @@ pub(crate) struct BenchOptions {
     cachegrind_wrapper: Vec<String>,
     /// Target number of instructions for the benchmark warm-up. Note that this number may not be reached
     /// for very fast benchmarks.
-    #[arg(long = "warm-up", default_value_t = 1_000_000, value_name = "INSTR")]
+    #[arg(long = "warm-up", default_value_t = 1_000_000, value_name = "INSTR", value_parser = positive_u64)]
     pub warm_up_instructions: u64,
     /// Maximum number of iterations for a single benchmark.
-    #[arg(long, default_value_t = 1_000, value_name = "ITER")]
+    #[arg(long, default_value_t = 1_000, value_name = "ITER", value_parser = positive_u64)]
     pub max_iterations: u64,
     /// Base directory to put cachegrind outputs into. Will be created if absent.
     #[arg(
@@ -95,12 +120,13 @@ pub(crate) struct BenchOptions {
     /// Compares results against the specified baseline.
     #[arg(long, short = 'B', visible_alias = "vs", value_name = "BASELINE")]
     baseline: Option<String>,
-    /// Regression threshold (e.g., 0.1 for 10%). Only active with `--baseline`.
+    /// Regression threshold (e.g., 0.1 or 10%). Only active with `--baseline`.
     #[arg(
         long,
         env = "CACHEGRIND_REGRESSION_THRESHOLD",
         requires = "baseline",
         value_name = "RATIO",
+        value_parser = f64_ratio,
         default_value_t = 0.05
     )]
     threshold: f64,
@@ -332,6 +358,30 @@ mod tests {
         assert_eq!(options.iterations, 123);
         assert!(options.is_baseline);
         assert_eq!(options.id, "fib");
+    }
+
+    #[allow(clippy::float_cmp)] // intentional
+    #[test]
+    fn parsing_threshold() {
+        let options = BenchOptions::parse_from(["yab", "--baseline=main", "--threshold", "0.01"]);
+        assert_eq!(options.threshold, 0.01);
+
+        let options = BenchOptions::parse_from(["yab", "--baseline=main", "--threshold", "1%"]);
+        assert_eq!(options.threshold, 0.01);
+
+        let options = BenchOptions::parse_from(["yab", "--baseline=main", "--threshold", "2.5%"]);
+        assert!((options.threshold - 0.025).abs() < 1e-6, "{options:?}");
+
+        let err = BenchOptions::try_parse_from(["yab", "--baseline=main", "--threshold", "100"])
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("ratio must be between 0 and 1"),
+            "{err}"
+        );
+
+        let err = BenchOptions::try_parse_from(["yab", "--baseline=main", "--threshold", "Inf"])
+            .unwrap_err();
+        assert!(err.to_string().contains("must be a finite number"), "{err}");
     }
 
     #[test]
