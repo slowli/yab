@@ -91,3 +91,85 @@ impl BenchmarkReporter for BenchmarkBaselineReporter {
         baseline.insert(self.id.to_string(), stats);
     }
 }
+
+#[derive(Debug, Clone)]
+pub(crate) struct RegressionChecker {
+    threshold: f64,
+    regressed_benches: Arc<Mutex<Vec<(BenchmarkId, f64)>>>,
+}
+
+impl RegressionChecker {
+    pub fn new(threshold: f64) -> Self {
+        Self {
+            threshold,
+            regressed_benches: Arc::default(),
+        }
+    }
+}
+
+impl Reporter for RegressionChecker {
+    fn new_benchmark(&mut self, id: &BenchmarkId) -> Box<dyn BenchmarkReporter> {
+        Box::new(RegressionBenchmarkChecker {
+            parent: self.clone(),
+            id: id.clone(),
+        })
+    }
+
+    fn ok(self: Box<Self>) {
+        use std::fmt::Write as _;
+
+        let regressed_benches = Arc::into_inner(self.regressed_benches)
+            .expect("`regressed_benches` leaked")
+            .into_inner()
+            .expect("`regressed_benches` is poisoned");
+
+        if !regressed_benches.is_empty() {
+            let len = regressed_benches.len();
+            let mut list = String::new();
+            for (i, (id, regression)) in regressed_benches.iter().enumerate() {
+                write!(&mut list, "  {id}: {:+.1}%", regression * 100.0).unwrap();
+                if i + 1 < len {
+                    writeln!(&mut list).unwrap();
+                }
+            }
+
+            // FIXME: utilize the printer instead.
+            panic!(
+                "{len} bench{plural} ha{s_or_ve} regressed by >{threshold:.1}%:\n{list}",
+                plural = if len == 1 { "" } else { "s" },
+                s_or_ve = if len == 1 { "s" } else { "ve" },
+                threshold = self.threshold * 100.0
+            );
+        }
+    }
+}
+
+#[derive(Debug)]
+struct RegressionBenchmarkChecker {
+    parent: RegressionChecker,
+    id: BenchmarkId,
+}
+
+impl BenchmarkReporter for RegressionBenchmarkChecker {
+    fn ok(self: Box<Self>, output: &BenchmarkOutput) {
+        let Some(prev_stats) = &output.prev_stats else {
+            return;
+        };
+        let current = output.stats.summary.total_instructions();
+        let prev = prev_stats.summary.total_instructions();
+        let Some(regression) = current.checked_sub(prev) else {
+            return; // no regression happened
+        };
+
+        #[allow(clippy::cast_precision_loss)] // OK for comparisons
+        let regression = regression as f64 / prev as f64;
+        if regression > self.parent.threshold {
+            self.parent
+                .regressed_benches
+                .lock()
+                .expect("`regressed_benches` is poisoned")
+                .push((self.id, regression));
+            // FIXME: print warning immediately
+        }
+    }
+}

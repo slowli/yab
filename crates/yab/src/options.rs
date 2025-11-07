@@ -94,6 +94,14 @@ pub(crate) struct BenchOptions {
     /// Compares results against the specified baseline.
     #[arg(long, short = 'B', visible_alias = "vs", value_name = "BASELINE")]
     baseline: Option<String>,
+    /// Regression threshold (e.g., 0.1 for 10%). Only active with `--baseline`.
+    #[arg(
+        long,
+        requires = "baseline",
+        value_name = "RATIO",
+        default_value_t = 0.05
+    )]
+    threshold: f64,
 
     /// List all benchmarks instead of running them.
     #[arg(long, conflicts_with = "print")]
@@ -199,6 +207,10 @@ impl BenchOptions {
     pub fn print_baseline_path(&self) -> Option<PathBuf> {
         let path = self.print.as_ref()?.as_ref()?;
         Some(self.resolve_baseline_path(path))
+    }
+
+    pub fn regression_threshold(&self) -> Option<f64> {
+        self.baseline.is_some().then_some(self.threshold)
     }
 }
 

@@ -17,8 +17,8 @@ use crate::{
     cachegrind::{CachegrindOutput, SpawnArgs},
     options::{BenchOptions, CachegrindOptions, IdMatcher, Options},
     reporter::{
-        baseline::BaselineSaver, BenchmarkOutput, BenchmarkReporter, NoOpReporter,
-        PrintingReporter, Reporter, SeqReporter,
+        baseline::{BaselineSaver, RegressionChecker},
+        BenchmarkOutput, BenchmarkReporter, NoOpReporter, PrintingReporter, Reporter, SeqReporter,
     },
     utils::Semaphore,
     BenchmarkId, Capture,
@@ -149,6 +149,9 @@ impl MainBencher {
         if let Some(path) = options.save_baseline_path() {
             let saver = BaselineSaver::new(path, &options);
             reporter.0.push(Box::new(saver));
+        }
+        if let Some(threshold) = options.regression_threshold() {
+            reporter.0.push(Box::new(RegressionChecker::new(threshold)));
         }
 
         Self {
