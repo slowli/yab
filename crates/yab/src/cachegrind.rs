@@ -391,10 +391,13 @@ impl CachegrindStats {
     }
 }
 
+/// Parsed output of a `cachegrind` invocation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct CachegrindOutput {
+    /// Summary, such as instruction stats.
     pub summary: CachegrindStats,
+    /// Breakdown by function.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub breakdown: HashMap<CachegrindFunction, CachegrindStats>,
 }
