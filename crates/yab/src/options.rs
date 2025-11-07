@@ -50,13 +50,18 @@ pub(crate) struct BenchOptions {
     cachegrind_wrapper: Vec<String>,
     /// Target number of instructions for the benchmark warm-up. Note that this number may not be reached
     /// for very fast benchmarks.
-    #[arg(long = "warm-up", default_value_t = 1_000_000)]
+    #[arg(long = "warm-up", default_value_t = 1_000_000, value_name = "INSTR")]
     pub warm_up_instructions: u64,
     /// Maximum number of iterations for a single benchmark.
-    #[arg(long, default_value_t = 1_000)]
+    #[arg(long, default_value_t = 1_000, value_name = "ITER")]
     pub max_iterations: u64,
     /// Base directory to put cachegrind outputs into. Will be created if absent.
-    #[arg(long, default_value = "target/yab", env = "CACHEGRIND_OUT_DIR")]
+    #[arg(
+        long,
+        value_name = "PATH",
+        default_value = "target/yab",
+        env = "CACHEGRIND_OUT_DIR"
+    )]
     pub cachegrind_out_dir: PathBuf,
     /// Maximum number of benchmarks to run in parallel.
     #[arg(
@@ -81,18 +86,20 @@ pub(crate) struct BenchOptions {
     pub breakdown: bool,
 
     /// Saves the full results as a named baseline.
-    #[arg(long)]
+    #[arg(long, value_name = "BASELINE")]
     save_baseline: Option<PathBuf>,
     /// Compares results against the specified baseline.
-    #[arg(long)]
+    #[arg(long, value_name = "BASELINE")]
     baseline: Option<PathBuf>,
 
     /// List all benchmarks instead of running them.
     #[arg(long, conflicts_with = "print")]
     list: bool,
-    /// Prints latest benchmark results without running benchmarks.
-    #[arg(long, conflicts_with = "list")]
-    print: bool,
+    /// Prints latest benchmark results without running benchmarks. If `BASELINE` is specified, prints
+    /// the specified baseline instead.
+    #[arg(long, value_name = "BASELINE", conflicts_with = "list")]
+    #[allow(clippy::option_option)] // necessary for clap
+    print: Option<Option<PathBuf>>,
     /// Match benchmark names exactly.
     #[arg(long)]
     exact: bool,
@@ -119,7 +126,7 @@ impl BenchOptions {
     pub fn mode(&self) -> BenchMode {
         if self.list {
             BenchMode::List
-        } else if self.print {
+        } else if self.print.is_some() {
             BenchMode::PrintResults
         } else if self.bench {
             BenchMode::Bench
@@ -174,6 +181,15 @@ impl BenchOptions {
         let path = self.baseline.as_ref()?;
         // If --save-baseline specifies an absolute path, it will completely overwrite the save dir,
         // just as needed
+        Some(self.cachegrind_out_dir.join("_baselines").join(path))
+    }
+
+    pub fn has_print_baseline(&self) -> bool {
+        matches!(&self.print, Some(Some(_)))
+    }
+
+    pub fn print_baseline_path(&self) -> Option<PathBuf> {
+        let path = self.print.as_ref()?.as_ref()?;
         Some(self.cachegrind_out_dir.join("_baselines").join(path))
     }
 }

@@ -2,7 +2,9 @@
 
 use std::{
     collections::HashMap,
-    env, fs, mem, panic,
+    env, fs,
+    io::BufReader,
+    mem, panic,
     path::Path,
     process,
     sync::{Arc, OnceLock},
@@ -50,7 +52,9 @@ enum BenchModeData {
         jobs: Vec<JoinHandle<()>>,
     },
     List,
-    PrintResults,
+    PrintResults {
+        current: Option<Baseline>,
+    },
 }
 
 impl BenchModeData {
@@ -63,7 +67,7 @@ impl BenchModeData {
                 jobs: vec![],
             },
             BenchMode::List => Self::List,
-            BenchMode::PrintResults => Self::PrintResults,
+            BenchMode::PrintResults => Self::PrintResults { current: None },
         }
     }
 
@@ -72,7 +76,7 @@ impl BenchModeData {
             Self::Test { .. } => BenchMode::Test,
             Self::Bench { .. } => BenchMode::Bench,
             Self::List => BenchMode::List,
-            Self::PrintResults => BenchMode::PrintResults,
+            Self::PrintResults { .. } => BenchMode::PrintResults,
         }
     }
 }
@@ -204,7 +208,7 @@ impl MainBencher {
             BenchModeData::List => {
                 PrintingReporter::report_list_item(&id);
             }
-            BenchModeData::PrintResults => {
+            BenchModeData::PrintResults { current } => {
                 let executor = CachegrindRunner {
                     options: self.options.clone(),
                     reporter: self.reporter.new_benchmark(&id),
@@ -213,7 +217,7 @@ impl MainBencher {
                     id,
                     baseline: self.baseline.clone(),
                 };
-                executor.report_benchmark_result();
+                executor.report_benchmark_result(current);
             }
         }
     }
@@ -325,26 +329,44 @@ impl CachegrindRunner {
         self.reporter.ok(&BenchmarkOutput { stats, prev_stats });
     }
 
-    fn report_benchmark_result(mut self) {
+    fn report_benchmark_result(mut self, printed_baseline: &mut Option<Baseline>) {
         let out_dir = &self.options.cachegrind_out_dir;
         let baseline_path = out_dir.join(format!("{}.baseline.cachegrind", self.id));
         let full_path = out_dir.join(format!("{}.cachegrind", self.id));
         let old_baseline_path = out_dir.join(format!("{}.baseline.cachegrind.old", self.id));
         let old_full_path = out_dir.join(format!("{}.cachegrind.old", self.id));
 
-        let Some(baseline) = self.load_output(&baseline_path) else {
-            self.reporter.warning(&"no data for benchmark");
-            return;
+        let stats = if let Some(path) = self.options.print_baseline_path() {
+            let baseline = printed_baseline
+                .get_or_insert_with(|| Self::load_baseline(&mut self.reporter, &path));
+            if let Some(stats) = baseline.get(&self.id.to_string()) {
+                stats.clone()
+            } else {
+                self.reporter.warning(&"no data for benchmark");
+                return;
+            }
+        } else {
+            let Some(baseline) = self.load_output(&baseline_path) else {
+                self.reporter.warning(&"no data for benchmark");
+                return;
+            };
+            let Some(full) = self.load_output(&full_path) else {
+                self.reporter.warning(&"no data for benchmark");
+                return;
+            };
+            full - baseline
         };
-        let Some(full) = self.load_output(&full_path) else {
-            self.reporter.warning(&"no data for benchmark");
-            return;
-        };
-        let stats = full - baseline;
 
-        let old_baseline = self.load_output(&old_baseline_path);
-        let prev_stats =
-            old_baseline.and_then(|baseline| Some(self.load_output(&old_full_path)? - baseline));
+        let prev_stats = if let Some(path) = self.options.baseline_path() {
+            let id = self.id.to_string();
+            self.ensure_baseline(&path).get(&id).cloned()
+        } else if self.options.has_print_baseline() {
+            // Do not load default / unnamed prev stats if the current baseline is specified.
+            None
+        } else {
+            let old_baseline = self.load_output(&old_baseline_path);
+            old_baseline.and_then(|baseline| Some(self.load_output(&old_full_path)? - baseline))
+        };
 
         self.reporter.ok(&BenchmarkOutput { stats, prev_stats });
     }
@@ -363,21 +385,23 @@ impl CachegrindRunner {
 
     fn ensure_baseline(&mut self, path: &Path) -> &Baseline {
         self.baseline
-            .get_or_init(|| match Self::load_baseline(path) {
-                Ok(baseline) => baseline,
-                Err(err) => {
-                    mem::replace(&mut self.reporter, Box::new(NoOpReporter)).error(&format!(
-                        "failed reading baseline from {}: {err}",
-                        path.display()
-                    ));
-                    process::exit(1);
-                }
-            })
+            .get_or_init(|| Self::load_baseline(&mut self.reporter, path))
     }
 
-    fn load_baseline(path: &Path) -> std::io::Result<Baseline> {
-        use std::io::BufReader;
+    fn load_baseline(reporter: &mut Box<dyn BenchmarkReporter>, path: &Path) -> Baseline {
+        match Self::load_baseline_inner(path) {
+            Ok(baseline) => baseline,
+            Err(err) => {
+                mem::replace(reporter, Box::new(NoOpReporter)).error(&format!(
+                    "failed reading baseline from {}: {err}",
+                    path.display()
+                ));
+                process::exit(1);
+            }
+        }
+    }
 
+    fn load_baseline_inner(path: &Path) -> std::io::Result<Baseline> {
         let reader = fs::File::open(path)?;
         serde_json::from_reader(BufReader::new(reader)).map_err(Into::into)
     }
