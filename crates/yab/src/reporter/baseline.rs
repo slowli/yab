@@ -8,7 +8,7 @@ use std::{
 use crate::{
     bencher::Baseline,
     options::BenchOptions,
-    reporter::{BenchmarkOutput, BenchmarkReporter, ControlFlow, Reporter},
+    reporter::{BenchmarkOutput, BenchmarkReporter, Logger, Reporter},
     BenchmarkId,
 };
 
@@ -17,7 +17,7 @@ pub(crate) struct BaselineSaver {
     out_path: PathBuf,
     stats: Arc<Mutex<Baseline>>,
     breakdown: bool,
-    control: Arc<dyn ControlFlow>,
+    logger: Arc<dyn Logger>,
 }
 
 impl BaselineSaver {
@@ -26,14 +26,14 @@ impl BaselineSaver {
             out_path,
             stats: Arc::default(),
             breakdown: options.breakdown,
-            control: Arc::new(()),
+            logger: Arc::new(()),
         }
     }
 }
 
 impl Reporter for BaselineSaver {
-    fn set_control(&mut self, control: &Arc<dyn ControlFlow>) {
-        self.control = control.clone();
+    fn set_logger(&mut self, logger: &Arc<dyn Logger>) {
+        self.logger = logger.clone();
     }
 
     fn new_benchmark(&mut self, id: &BenchmarkId) -> Box<dyn BenchmarkReporter> {
@@ -47,7 +47,7 @@ impl Reporter for BaselineSaver {
     fn ok(self: Box<Self>) {
         if let Some(parent_dir) = self.out_path.parent() {
             fs::create_dir_all(parent_dir).unwrap_or_else(|err| {
-                self.control.error(&format_args!(
+                self.logger.fatal(&format_args!(
                     "failed creating parent dir for baseline file `{}`: {err}",
                     self.out_path.display()
                 ));
@@ -55,7 +55,7 @@ impl Reporter for BaselineSaver {
         }
 
         let writer = fs::File::create(&self.out_path).unwrap_or_else(|err| {
-            self.control.error(&format_args!(
+            self.logger.fatal(&format_args!(
                 "failed creating baseline file `{}`: {err}",
                 self.out_path.display()
             ));
@@ -65,7 +65,7 @@ impl Reporter for BaselineSaver {
         let stats = Arc::into_inner(self.stats).expect("stats leaked");
         let stats = stats.into_inner().expect("stats are poisoned");
         serde_json::to_writer_pretty(writer, &stats).unwrap_or_else(|err| {
-            self.control.error(&format_args!(
+            self.logger.fatal(&format_args!(
                 "failed writing baseline file `{}`: {err}",
                 self.out_path.display()
             ));
@@ -102,7 +102,7 @@ impl BenchmarkReporter for BenchmarkBaselineReporter {
 pub(crate) struct RegressionChecker {
     threshold: f64,
     regressed_benches: Arc<Mutex<Vec<(BenchmarkId, f64)>>>,
-    control: Arc<dyn ControlFlow>,
+    logger: Arc<dyn Logger>,
 }
 
 impl RegressionChecker {
@@ -110,14 +110,14 @@ impl RegressionChecker {
         Self {
             threshold,
             regressed_benches: Arc::default(),
-            control: Arc::new(()),
+            logger: Arc::new(()),
         }
     }
 }
 
 impl Reporter for RegressionChecker {
-    fn set_control(&mut self, control: &Arc<dyn ControlFlow>) {
-        self.control = control.clone();
+    fn set_logger(&mut self, logger: &Arc<dyn Logger>) {
+        self.logger = logger.clone();
     }
 
     fn new_benchmark(&mut self, id: &BenchmarkId) -> Box<dyn BenchmarkReporter> {
@@ -145,7 +145,7 @@ impl Reporter for RegressionChecker {
                 }
             }
 
-            self.control.error(&format_args!(
+            self.logger.fatal(&format_args!(
                 "{len} bench{plural} ha{s_or_ve} regressed by >{threshold:.1}%:\n{list}",
                 plural = if len == 1 { "" } else { "s" },
                 s_or_ve = if len == 1 { "s" } else { "ve" },
@@ -176,7 +176,7 @@ impl BenchmarkReporter for RegressionBenchmarkChecker {
         let regression = regression as f64 / prev as f64;
         if regression > self.parent.threshold {
             self.parent
-                .control
+                .logger
                 .for_benchmark(&self.id)
                 .warning(&format_args!(
                     "bench has regressed by {:.1}%",

@@ -2,7 +2,7 @@
 
 use std::{
     collections::HashMap,
-    env, fs,
+    env, fmt, fs,
     io::BufReader,
     mem, panic,
     path::Path,
@@ -17,7 +17,7 @@ use crate::{
     options::{BenchOptions, CachegrindOptions, IdMatcher, Options},
     reporter::{
         baseline::{BaselineSaver, RegressionChecker},
-        BenchmarkOutput, BenchmarkReporter, ControlFlow, PrintingReporter, Reporter, SeqReporter,
+        BenchmarkOutput, BenchmarkReporter, Logger, PrintingReporter, Reporter, SeqReporter,
     },
     utils::Semaphore,
     BenchmarkId, Capture,
@@ -101,13 +101,13 @@ impl Drop for MainBencher {
                 for job in mem::take(jobs) {
                     if job.join().is_err() {
                         self.reporter
-                            .control
-                            .error(&"At least one of benchmarking jobs failed");
+                            .logger
+                            .fatal(&"At least one of benchmarking jobs failed");
                     }
                 }
             }
             BenchModeData::Test { should_fail } if *should_fail => {
-                self.reporter.control.error(&"There were test failures");
+                self.reporter.logger.fatal(&"There were test failures");
             }
             _ => { /* no special handling required */ }
         }
@@ -119,7 +119,7 @@ impl MainBencher {
     fn new(options: BenchOptions) -> Self {
         let mut printer =
             PrintingReporter::new(options.styling(), options.verbosity(), options.breakdown);
-        let control = Arc::new(printer.control());
+        let logger = Arc::new(printer.to_logger());
 
         options.report(&mut printer);
         let mode = BenchModeData::new(&options);
@@ -129,7 +129,7 @@ impl MainBencher {
                     printer.report_debug(format_args!("Using cachegrind with version {version}"));
                 }
                 Err(err) => {
-                    control.error(&err);
+                    logger.fatal(&err);
                 }
             }
         }
@@ -137,11 +137,11 @@ impl MainBencher {
         let id_matcher = match options.id_matcher() {
             Ok(matcher) => matcher,
             Err(err) => {
-                control.error(&err);
+                logger.fatal(&err);
             }
         };
 
-        let mut reporter = SeqReporter::new(control);
+        let mut reporter = SeqReporter::new(logger);
         reporter.push(Box::new(printer));
         if let Some(path) = options.save_baseline_path() {
             let saver = BaselineSaver::new(path, &options);
@@ -190,7 +190,7 @@ impl MainBencher {
                     options: self.options.clone(),
                     this_executable: this_executable.to_owned(),
                     reporter: self.reporter.new_benchmark(&id),
-                    control: self.reporter.control.for_benchmark(&id),
+                    logger: self.reporter.logger.clone().for_benchmark(&id),
                     id,
                     baseline: self.baseline.clone(),
                 };
@@ -213,7 +213,7 @@ impl MainBencher {
                 let executor = CachegrindRunner {
                     options: self.options.clone(),
                     reporter: self.reporter.new_benchmark(&id),
-                    control: self.reporter.control.for_benchmark(&id),
+                    logger: self.reporter.logger.clone().for_benchmark(&id),
                     // `this_executable` isn't used, so it's fine to set it to an empty string
                     this_executable: String::new(),
                     id,
@@ -231,20 +231,20 @@ struct CachegrindRunner {
     options: BenchOptions,
     this_executable: String,
     reporter: Box<dyn BenchmarkReporter>,
-    control: Box<dyn ControlFlow>,
+    logger: Arc<dyn Logger>,
     id: BenchmarkId,
     baseline: Arc<OnceLock<Baseline>>,
 }
 
-macro_rules! unwrap_summary {
-    ($control:expr, $result:expr) => {
-        match $result {
+impl dyn Logger {
+    fn unwrap_result<T, E: fmt::Display>(&self, result: Result<T, E>) -> T {
+        match result {
             Ok(value) => value,
             Err(err) => {
-                $control.error(&err);
+                self.fatal(&err);
             }
         }
-    };
+    }
 }
 
 impl CachegrindRunner {
@@ -285,7 +285,7 @@ impl CachegrindRunner {
             iterations: 2,
             is_baseline: true,
         });
-        let output = unwrap_summary!(self.control, cachegrind_result);
+        let output = self.logger.unwrap_result(cachegrind_result);
 
         // FIXME: handle `warm_up_instructions == 0` specially
         let estimated_iterations =
@@ -304,7 +304,7 @@ impl CachegrindRunner {
                 iterations: estimated_iterations + 1,
                 is_baseline: true,
             });
-            unwrap_summary!(self.control, cachegrind_result)
+            self.logger.unwrap_result(cachegrind_result)
         };
         self.reporter.baseline_computed(&baseline.summary);
 
@@ -317,16 +317,16 @@ impl CachegrindRunner {
             iterations: estimated_iterations + 1,
             is_baseline: false,
         });
-        let full = unwrap_summary!(self.control, cachegrind_result);
+        let full = self.logger.unwrap_result(cachegrind_result);
         let stats = full - baseline;
 
         // (Almost) atomically move cachegrind files to their final locations, so that the following benchmark runs
         // don't output nonsense if the benchmark is interrupted. There's still a risk that the baseline file
         // will get updated and the full output will be not, but it's significantly lower.
         let io_result = fs::rename(&baseline_path, &final_baseline_path);
-        unwrap_summary!(self.control, io_result);
+        self.logger.unwrap_result(io_result);
         let io_result = fs::rename(&full_path, &final_full_path);
-        unwrap_summary!(self.control, io_result);
+        self.logger.unwrap_result(io_result);
 
         self.reporter.ok(&BenchmarkOutput { stats, prev_stats });
     }
@@ -340,20 +340,20 @@ impl CachegrindRunner {
 
         let stats = if let Some(path) = self.options.print_baseline_path() {
             let baseline = printed_baseline
-                .get_or_insert_with(|| Self::load_baseline(self.control.as_ref(), &path));
+                .get_or_insert_with(|| Self::load_baseline(self.logger.as_ref(), &path));
             if let Some(stats) = baseline.get(&self.id.to_string()) {
                 stats.clone()
             } else {
-                self.control.warning(&"no data for benchmark");
+                self.logger.warning(&"no data for benchmark");
                 return;
             }
         } else {
             let Some(baseline) = self.load_output(&baseline_path) else {
-                self.control.warning(&"no data for benchmark");
+                self.logger.warning(&"no data for benchmark");
                 return;
             };
             let Some(full) = self.load_output(&full_path) else {
-                self.control.warning(&"no data for benchmark");
+                self.logger.warning(&"no data for benchmark");
                 return;
             };
             full - baseline
@@ -379,7 +379,7 @@ impl CachegrindRunner {
             .and_then(|file| match CachegrindOutput::new(file, path) {
                 Ok(summary) => Some(summary),
                 Err(err) => {
-                    self.control.warning(&err);
+                    self.logger.warning(&err);
                     None
                 }
             })
@@ -387,14 +387,14 @@ impl CachegrindRunner {
 
     fn ensure_baseline(&self, path: &Path) -> &Baseline {
         self.baseline
-            .get_or_init(|| Self::load_baseline(self.control.as_ref(), path))
+            .get_or_init(|| Self::load_baseline(self.logger.as_ref(), path))
     }
 
-    fn load_baseline(control: &dyn ControlFlow, path: &Path) -> Baseline {
+    fn load_baseline(logger: &dyn Logger, path: &Path) -> Baseline {
         match Self::load_baseline_inner(path) {
             Ok(baseline) => baseline,
             Err(err) => {
-                control.error(&format_args!(
+                logger.fatal(&format_args!(
                     "failed reading baseline from {}: {err}",
                     path.display()
                 ));
@@ -420,7 +420,7 @@ impl CachegrindRunner {
                     "Failed backing up cachegrind baseline `{path}`: {err}",
                     path = path.display()
                 );
-                self.control.warning(&err);
+                self.logger.warning(&err);
             }
         }
         summary

@@ -2,25 +2,25 @@
 
 use std::{any::Any, mem, sync::Arc};
 
-use super::{BenchmarkOutput, BenchmarkReporter, ControlFlow, Reporter, TestReporter};
+use super::{BenchmarkOutput, BenchmarkReporter, Logger, Reporter, TestReporter};
 use crate::{BenchmarkId, CachegrindStats};
 
 #[derive(Debug)]
 pub(crate) struct SeqReporter {
     reporters: Vec<Box<dyn Reporter>>,
-    pub(crate) control: Arc<dyn ControlFlow>,
+    pub(crate) logger: Arc<dyn Logger>,
 }
 
 impl SeqReporter {
-    pub fn new(control: Arc<dyn ControlFlow>) -> Self {
+    pub fn new(logger: Arc<dyn Logger>) -> Self {
         Self {
             reporters: vec![],
-            control,
+            logger,
         }
     }
 
     pub fn push(&mut self, mut reporter: Box<dyn Reporter>) {
-        reporter.set_control(&self.control);
+        reporter.set_logger(&self.logger);
         self.reporters.push(reporter);
     }
 

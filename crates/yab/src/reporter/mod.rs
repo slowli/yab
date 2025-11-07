@@ -27,10 +27,10 @@ pub struct BenchmarkOutput {
 /// Reporter for benchmarking output that allows to extend or modify benchmarking logic.
 #[allow(unused_variables)]
 pub trait Reporter: fmt::Debug {
-    /// Sets the [`ControlFlow`] for this reporter. This method is called once before any other operations.
+    /// Sets the [`Logger`] for this reporter. This method is called once before any other operations.
     ///
     /// The default implementation does nothing.
-    fn set_control(&mut self, control: &Arc<dyn ControlFlow>) {
+    fn set_logger(&mut self, logger: &Arc<dyn Logger>) {
         // do nothing
     }
 
@@ -51,30 +51,30 @@ pub trait Reporter: fmt::Debug {
     }
 }
 
-/// Encapsulates control flow for a benchmark.
-pub trait ControlFlow: Send + Sync + fmt::Debug {
+/// Encapsulates logging for a benchmark.
+pub trait Logger: Send + Sync + fmt::Debug {
     /// Reports a warning.
     fn warning(&self, warning: &dyn fmt::Display);
 
     /// Reports a non-recoverable error. This method never returns, terminating the benchmark executable.
-    fn error(&self, error: &dyn fmt::Display) -> !;
+    fn fatal(&self, error: &dyn fmt::Display) -> !;
 
-    /// Specializes this control for a particular benchmark.
-    fn for_benchmark(&self, id: &BenchmarkId) -> Box<dyn ControlFlow>;
+    /// Specializes this logger for a particular benchmark.
+    fn for_benchmark(self: Arc<Self>, id: &BenchmarkId) -> Arc<dyn Logger>;
 }
 
 /// No-op implementation.
-impl ControlFlow for () {
+impl Logger for () {
     fn warning(&self, _warning: &dyn fmt::Display) {
         // do nothing
     }
 
-    fn error(&self, error: &dyn fmt::Display) -> ! {
+    fn fatal(&self, error: &dyn fmt::Display) -> ! {
         panic!("{error}");
     }
 
-    fn for_benchmark(&self, _id: &BenchmarkId) -> Box<dyn ControlFlow> {
-        Box::new(())
+    fn for_benchmark(self: Arc<Self>, _id: &BenchmarkId) -> Arc<dyn Logger> {
+        self
     }
 }
 

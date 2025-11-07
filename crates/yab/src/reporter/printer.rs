@@ -13,7 +13,7 @@ use anes::{
     Attribute, Color, ResetAttributes, SetAttribute, SetBackgroundColor, SetForegroundColor,
 };
 
-use super::{BenchmarkOutput, ControlFlow, Reporter};
+use super::{BenchmarkOutput, Logger, Reporter};
 use crate::{
     cachegrind::{AccessSummary, CachegrindFunction, CachegrindOutput, CachegrindStats},
     BenchmarkId, FullCachegrindStats,
@@ -305,8 +305,8 @@ impl PrintingReporter {
         println!("{id}: benchmark");
     }
 
-    pub fn control(&self) -> impl ControlFlow {
-        PrintingBenchmarkControl {
+    pub fn to_logger(&self) -> impl Logger {
+        PrintingLogger {
             reporter: self.clone(),
             id: None,
         }
@@ -527,27 +527,27 @@ where
 }
 
 #[derive(Debug)]
-struct PrintingBenchmarkControl<W = io::Stderr> {
+struct PrintingLogger<W = io::Stderr> {
     reporter: PrintingReporter<W>,
     id: Option<BenchmarkId>,
 }
 
-impl ControlFlow for PrintingBenchmarkControl {
+impl Logger for PrintingLogger {
     fn warning(&self, warning: &dyn fmt::Display) {
         self.reporter
             .lock_printer()
             .print_warning(self.id.as_ref(), warning);
     }
 
-    fn error(&self, error: &dyn fmt::Display) -> ! {
+    fn fatal(&self, error: &dyn fmt::Display) -> ! {
         self.reporter
             .lock_printer()
             .print_error(self.id.as_ref(), error);
         process::exit(1);
     }
 
-    fn for_benchmark(&self, id: &BenchmarkId) -> Box<dyn ControlFlow> {
-        Box::new(Self {
+    fn for_benchmark(self: Arc<Self>, id: &BenchmarkId) -> Arc<dyn Logger> {
+        Arc::new(Self {
             reporter: self.reporter.clone(),
             id: Some(id.clone()),
         })
