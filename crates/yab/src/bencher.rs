@@ -428,7 +428,7 @@ impl CachegrindRunner {
 
 #[derive(Debug)]
 enum BencherInner {
-    Main(MainBencher),
+    Main(Box<MainBencher>),
     Cachegrind(CachegrindOptions),
 }
 
@@ -442,18 +442,19 @@ pub struct Bencher {
     inner: BencherInner,
 }
 
-/// Parses configuration options from the environment.
-impl Default for Bencher {
-    fn default() -> Self {
+impl Bencher {
+    #[doc(hidden)] // should only be used from `yab::main!()` macro
+    pub fn new(bench_name: &'static str) -> Self {
         let inner = match Options::new() {
-            Options::Bench(options) => BencherInner::Main(MainBencher::new(options)),
+            Options::Bench(mut options) => {
+                options.bench_name = bench_name;
+                BencherInner::Main(Box::new(MainBencher::new(options)))
+            }
             Options::Cachegrind(options) => BencherInner::Cachegrind(options),
         };
         Self { inner }
     }
-}
 
-impl Bencher {
     /// Adds a reporter to the bencher. Beware that bencher initialization may skew benchmark results.
     #[doc(hidden)] // not stable yet
     pub fn add_reporter(&mut self, reporter: impl Reporter + 'static) -> &mut Self {

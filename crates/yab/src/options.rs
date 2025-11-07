@@ -38,6 +38,9 @@ pub(crate) struct BenchOptions {
     /// Whether to run benchmarks as opposed to tests.
     #[arg(long, hide = true)]
     bench: bool,
+    /// Name of the bench.
+    #[arg(skip)]
+    pub bench_name: &'static str,
 
     /// Wrapper to call `cachegrind` as. Beware that changing params will likely render results not comparable.
     #[arg(
@@ -86,11 +89,11 @@ pub(crate) struct BenchOptions {
     pub breakdown: bool,
 
     /// Saves the full results as a named baseline.
-    #[arg(long, value_name = "BASELINE")]
-    save_baseline: Option<PathBuf>,
+    #[arg(long, visible_alias = "save", value_name = "BASELINE")]
+    save_baseline: Option<String>,
     /// Compares results against the specified baseline.
-    #[arg(long, value_name = "BASELINE")]
-    baseline: Option<PathBuf>,
+    #[arg(long, short = 'B', visible_alias = "vs", value_name = "BASELINE")]
+    baseline: Option<String>,
 
     /// List all benchmarks instead of running them.
     #[arg(long, conflicts_with = "print")]
@@ -99,7 +102,7 @@ pub(crate) struct BenchOptions {
     /// the specified baseline instead.
     #[arg(long, value_name = "BASELINE", conflicts_with = "list")]
     #[allow(clippy::option_option)] // necessary for clap
-    print: Option<Option<PathBuf>>,
+    print: Option<Option<String>>,
     /// Match benchmark names exactly.
     #[arg(long)]
     exact: bool,
@@ -172,16 +175,21 @@ impl BenchOptions {
 
     pub fn save_baseline_path(&self) -> Option<PathBuf> {
         let path = self.save_baseline.as_ref()?;
-        // If --save-baseline specifies an absolute path, it will completely overwrite the save dir,
-        // just as needed
-        Some(self.cachegrind_out_dir.join("_baselines").join(path))
+        Some(self.resolve_baseline_path(path))
+    }
+
+    fn resolve_baseline_path(&self, name: &str) -> PathBuf {
+        let (dir, name) = if let Some(pub_name) = name.strip_prefix("pub:") {
+            (Path::new("benches").join(self.bench_name), pub_name)
+        } else {
+            (self.cachegrind_out_dir.join("_baselines"), name)
+        };
+        dir.join(format!("{name}.baseline.json"))
     }
 
     pub fn baseline_path(&self) -> Option<PathBuf> {
         let path = self.baseline.as_ref()?;
-        // If --save-baseline specifies an absolute path, it will completely overwrite the save dir,
-        // just as needed
-        Some(self.cachegrind_out_dir.join("_baselines").join(path))
+        Some(self.resolve_baseline_path(path))
     }
 
     pub fn has_print_baseline(&self) -> bool {
@@ -190,7 +198,7 @@ impl BenchOptions {
 
     pub fn print_baseline_path(&self) -> Option<PathBuf> {
         let path = self.print.as_ref()?.as_ref()?;
-        Some(self.cachegrind_out_dir.join("_baselines").join(path))
+        Some(self.resolve_baseline_path(path))
     }
 }
 
@@ -320,5 +328,34 @@ mod tests {
         assert_eq!(options.iterations, 123);
         assert!(options.is_baseline);
         assert_eq!(options.id, "fib");
+    }
+
+    #[test]
+    fn resolving_baseline_paths() {
+        let mut options =
+            BenchOptions::parse_from(["yab", "--baseline", "main", "--save-baseline", "pub:new"]);
+        options.bench_name = "yab";
+
+        assert_eq!(
+            options.baseline_path().unwrap(),
+            Path::new("target/yab/_baselines/main.baseline.json")
+        );
+        assert_eq!(
+            options.save_baseline_path().unwrap(),
+            Path::new("benches/yab/new.baseline.json")
+        );
+        assert!(options.print_baseline_path().is_none());
+
+        let mut options =
+            BenchOptions::parse_from(["yab", "--vs", "pub:main", "--print", "feature/alloc"]);
+        options.bench_name = "yab";
+        assert_eq!(
+            options.baseline_path().unwrap(),
+            Path::new("benches/yab/main.baseline.json")
+        );
+        assert_eq!(
+            options.print_baseline_path().unwrap(),
+            Path::new("target/yab/_baselines/feature/alloc.baseline.json")
+        );
     }
 }

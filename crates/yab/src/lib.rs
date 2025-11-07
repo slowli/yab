@@ -156,7 +156,7 @@ mod utils;
 macro_rules! main {
     ($function:path) => {
         fn main() {
-            $function(&mut $crate::Bencher::default());
+            $function(&mut $crate::Bencher::new(::core::env!("CARGO_CRATE_NAME")));
         }
     };
 }
