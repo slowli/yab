@@ -1,4 +1,4 @@
-<!-- Created with term-transcript v0.4.0-beta.1 (https://github.com/slowli/term-transcript) -->
+<!-- Created with term-transcript v0.4.0 (https://github.com/slowli/term-transcript) -->
 <svg viewBox="0 -22 720 394" width="720" height="394" xmlns="http://www.w3.org/2000/svg">
   <switch>
     <g requiredExtensions="http://www.w3.org/1999/xhtml">
@@ -66,23 +66,23 @@
           <div xmlns="http://www.w3.org/1999/xhtml" class="container">
             <div class="input" data-exit-status="0"><pre><span class="prompt">$</span> cargo bench --bench all -- --quiet fib</pre></div>
             <div class="output"><pre>[<span class="bold fg10">√</span>] fib_short<span class="dimmed"> (10ms)</span>
-├ Instructions              1745
-└ Est. cycles               2381
+├ Instructions              1741
+└ Est. cycles               2376
 [<span class="bold fg10">√</span>] fib_long<span class="dimmed"> (10ms)</span>
-├ Instructions          26214745
-└ Est. cycles           35638641
+├ Instructions          26214741
+└ Est. cycles           35638636
 [<span class="bold fg10">√</span>] fib/15<span class="dimmed"> (10ms)</span>
-├ Instructions             19232
-└ Est. cycles              26155
+├ Instructions             19228
+└ Est. cycles              26150
 [<span class="bold fg10">√</span>] fib/20<span class="dimmed"> (10ms)</span>
-├ Instructions            213155
-└ Est. cycles             289791
+├ Instructions            213151
+└ Est. cycles             289786
 [<span class="bold fg10">√</span>] fib/25<span class="dimmed"> (10ms)</span>
-├ Instructions           2363794
-└ Est. cycles            3213559
+├ Instructions           2363790
+└ Est. cycles            3213554
 [<span class="bold fg10">√</span>] fib_capture<span class="dimmed"> (10ms)</span>
-├ Instructions              1746
-└ Est. cycles               2383
+├ Instructions              1742
+└ Est. cycles               2378
 </pre></div>
           </div>
         </foreignObject>

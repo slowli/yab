@@ -1,4 +1,4 @@
-<!-- Created with term-transcript v0.4.0-beta.1 (https://github.com/slowli/term-transcript) -->
+<!-- Created with term-transcript v0.4.0 (https://github.com/slowli/term-transcript) -->
 <svg viewBox="0 -22 850 250" width="850" height="250" xmlns="http://www.w3.org/2000/svg">
   <switch>
     <g requiredExtensions="http://www.w3.org/1999/xhtml">
@@ -53,8 +53,8 @@
           <div xmlns="http://www.w3.org/1999/xhtml" class="container">
             <div class="input" data-exit-status="0"><pre><span class="prompt">$</span> cargo bench --bench all -- --quiet --breakdown collect/hash_set</pre></div>
             <div class="output"><pre>[<span class="bold fg10">√</span>] collect/hash_set<span class="dimmed"> (10ms)</span>
-├ Instructions           1582867
-└ Est. cycles            1955017
+├ Instructions           1582709
+└ Est. cycles            1955001
 <span class="bold">    %   % diff  Instr.diff  Function
 </span>86.3%  <span class="dimmed">      -</span>  <span class="dimmed">         -</span>  hashbrown::map::HashMap&lt;K,V,S,A&gt;::insert
 12.6%  <span class="dimmed">      -</span>  <span class="dimmed">         -</span>  &lt;core::iter::adapters::map::Map&lt;I,F&gt; as core::iter::tra… <span class="fg14">[1]</span>

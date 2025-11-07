@@ -1,4 +1,4 @@
-<!-- Created with term-transcript v0.4.0-beta.1 (https://github.com/slowli/term-transcript) -->
+<!-- Created with term-transcript v0.4.0 (https://github.com/slowli/term-transcript) -->
 <svg viewBox="0 -22 720 338" width="720" height="338" xmlns="http://www.w3.org/2000/svg">
   <switch>
     <g requiredExtensions="http://www.w3.org/1999/xhtml">
@@ -66,22 +66,22 @@
           <div xmlns="http://www.w3.org/1999/xhtml" class="container">
             <div class="input" data-exit-status="0"><pre><span class="prompt">$</span> cargo bench --bench all fib_short</pre></div>
             <div class="output"><pre>[<span class="bold fg10">√</span>] fib_short<span class="dimmed"> (10ms)</span>
-├ Instructions              1745
-├ L1 hits                   2381
+├ Instructions              1741
+├ L1 hits                   2376
 ├ L2/L3 hits                   0
 ├ RAM accesses                 0
-└ Est. cycles               2381
+└ Est. cycles               2376
 </pre></div>
-            <div class="input input-hidden" data-exit-status="0"><pre><span class="prompt">$</span> export CACHEGRIND_WRAPPER&#x3D;&quot;$CACHEGRIND_WRAPPER:--profile&#x3D;comparison&quot;</pre></div>
+            <div class="input input-hidden" data-exit-status="0"><pre><span class="prompt">$</span> export CACHEGRIND_WRAPPER&#x3D;&quot;$CACHEGRIND_WRAPPER:--profile&#x3D;cmp&quot;</pre></div>
             <div class="output"><pre></pre></div>
             <div class="input" data-exit-status="0"><pre><span class="prompt">$</span> cargo bench --bench all fib_short
 # after some changes...</pre></div>
             <div class="output"><pre>[<span class="bold fg10">√</span>] fib_short<span class="dimmed"> (10ms)</span>
-├ Instructions              1739<span class="fg10">           -6 (-0.34%)</span>
-├ L1 hits                   2390<span class="fg9">           +9 (+0.38%)</span>
+├ Instructions              1739<span class="fg10">           -2 (-0.11%)</span>
+├ L1 hits                   2390<span class="fg9">          +14 (+0.59%)</span>
 ├ L2/L3 hits                   3<span class="fg9">           +3 (+inf%)</span>
 ├ RAM accesses                 0
-└ Est. cycles               2405<span class="fg9">          +24 (+1.01%)</span>
+└ Est. cycles               2405<span class="fg9">          +29 (+1.22%)</span>
 </pre></div>
           </div>
         </foreignObject>

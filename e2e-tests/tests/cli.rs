@@ -138,7 +138,7 @@ fn comparison_transcript() {
         [
             UserInput::command("cargo bench --bench all fib_short"),
             UserInput::command(
-                "export CACHEGRIND_WRAPPER=\"$CACHEGRIND_WRAPPER:--profile=comparison\"",
+                "export CACHEGRIND_WRAPPER=\"$CACHEGRIND_WRAPPER:--profile=cmp\"",
             )
             .hide(),
             UserInput::command("cargo bench --bench all fib_short\n# after some changes..."),
@@ -153,7 +153,7 @@ fn verbose_transcript() {
         lib_snapshot("verbose"),
         [
             UserInput::command("cargo bench --bench all -- --quiet random_walk/10000000"),
-            UserInput::command("export CACHEGRIND_WRAPPER=\"$CACHEGRIND_WRAPPER:--profile=comparison\"")
+            UserInput::command("export CACHEGRIND_WRAPPER=\"$CACHEGRIND_WRAPPER:--profile=cmp\"")
                 .hide(),
             UserInput::command("cargo bench --bench all -- --verbose random_walk/10000000\n# after some changes..."),
         ],
