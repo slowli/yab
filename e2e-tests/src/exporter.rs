@@ -13,6 +13,8 @@ pub const EXPORTER_OUTPUT_VAR: &str = "YAB_BENCHMARKS_JSON";
 
 type SharedOutputs = Arc<Mutex<HashMap<String, BenchmarkOutput>>>;
 
+// This reporter doesn't reduce to the standard baseline saver because we need the previous outputs
+// for some tests.
 #[derive(Debug, Default)]
 pub(crate) struct BenchmarkExporter {
     outputs: SharedOutputs,

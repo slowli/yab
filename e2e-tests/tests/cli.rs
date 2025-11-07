@@ -66,6 +66,10 @@ fn transform_output<'a>(output_lines: impl Iterator<Item = &'a str>) -> String {
         if line.contains("Running") && line.contains("benches/all.rs") {
             should_output_line = true;
         }
+        if line.contains("bench failed, to rerun pass") {
+            // Truncate the following "Caused by" diagnostic output containing unpredictable paths etc.
+            should_output_line = false;
+        }
         if !current_output_line {
             continue;
         }
@@ -145,6 +149,33 @@ fn comparison_transcript() {
 }
 
 #[test]
+fn comparing_to_baseline() {
+    let (config, _lock) = test_config(false);
+    config.with_template(plain_template()).test(
+        lib_snapshot("cmp-baseline"),
+        [UserInput::command(
+            "cargo bench --bench all -- --vs pub:cmp fib_short\n\
+                # Compare current `fib_short` impl to the public `cmp` baseline\n\
+                # (one in the `benches/all` dir)",
+        )],
+    );
+}
+
+#[test]
+fn baseline_regression_failure() {
+    let (config, _lock) = test_config(true);
+    config.with_template(plain_template()).test(
+        lib_snapshot("baseline-regression"),
+        [
+            // FIXME: specify threshold as env var
+            UserInput::command(
+                "cargo bench --bench all -- --vs pub:cmp --threshold 0.01 -q random_walk",
+            ),
+        ],
+    );
+}
+
+#[test]
 fn verbose_transcript() {
     let (config, _lock) = test_config(false);
     config.with_template(plain_template()).test(
@@ -171,6 +202,17 @@ fn breakdown() {
         lib_snapshot("breakdown"),
         [UserInput::command(
             "cargo bench --bench all -- --quiet --breakdown collect/hash_set",
+        )],
+    );
+}
+
+#[test]
+fn printing_baseline() {
+    let (config, _lock) = test_config(true);
+    config.with_template(plain_template()).test(
+        lib_snapshot("print-baseline"),
+        [UserInput::command(
+            "cargo bench --bench all -- --print pub:cmp --quiet",
         )],
     );
 }

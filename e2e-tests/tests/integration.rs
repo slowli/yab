@@ -507,3 +507,70 @@ fn disabling_cache_simulation() {
 
     assert_reference_stats(&outputs, false);
 }
+
+#[test]
+fn printing_public_baseline() {
+    let output = Command::new(EXE_PATH)
+        .arg("--print=pub:main")
+        .output()
+        .expect("failed running benches");
+    assert!(output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let benchmark_names: HashSet<_> = stderr
+        .lines()
+        .filter_map(|line| line.strip_prefix("[√] "))
+        .collect();
+    for &name in EXPECTED_BENCH_NAMES {
+        assert!(
+            benchmark_names.contains(name),
+            "{benchmark_names:?} doesn't contain {name}"
+        );
+    }
+}
+
+#[test]
+fn comparing_public_baselines() {
+    let output = Command::new(EXE_PATH)
+        .args(["--print=pub:main", "--vs=pub:cmp", "random_walk"])
+        .output()
+        .expect("failed running benches");
+    assert!(output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let mut lines = stderr.lines();
+    assert!(
+        lines.any(|line| line == "├ Instructions           1800019       +30008 (+1.70%)"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn comparing_public_baselines_with_threshold() {
+    let output = Command::new(EXE_PATH)
+        .args([
+            "--print=pub:main",
+            "--vs=pub:cmp",
+            "--threshold=0.01",
+            "random_walk",
+        ])
+        .output()
+        .expect("failed running benches");
+    assert!(!output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let warn = stderr
+        .lines()
+        .find_map(|line| line.strip_prefix(" WARN: "))
+        .unwrap();
+    assert!(
+        warn.contains("random_walk/10000000") && warn.contains("bench has regressed by 1.7%"),
+        "{stderr}"
+    );
+
+    let error = stderr
+        .lines()
+        .find_map(|line| line.strip_prefix("ERROR: "))
+        .unwrap();
+    assert_eq!(error, "1 bench has regressed by >1.0%:");
+}
