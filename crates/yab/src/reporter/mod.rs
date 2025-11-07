@@ -1,6 +1,6 @@
 //! Benchmark reporting.
 
-use std::{any::Any, fmt};
+use std::{any::Any, fmt, sync::Arc};
 
 use serde::{Deserialize, Serialize};
 
@@ -27,11 +27,10 @@ pub struct BenchmarkOutput {
 /// Reporter for benchmarking output that allows to extend or modify benchmarking logic.
 #[allow(unused_variables)]
 pub trait Reporter: fmt::Debug {
-    /// Reports a (non-recoverable) error not related to a particular benchmark.
-    /// This is mutually exclusive with [`Self::ok()`].
+    /// Sets the [`ControlFlow`] for this reporter. This method is called once before any other operations.
     ///
     /// The default implementation does nothing.
-    fn error(&mut self, error: &dyn fmt::Display) {
+    fn set_control(&mut self, control: &Arc<dyn ControlFlow>) {
         // do nothing
     }
 
@@ -50,6 +49,33 @@ pub trait Reporter: fmt::Debug {
     /// The default implementation does nothing.
     fn ok(self: Box<Self>) {
         // do nothing
+    }
+}
+
+/// Encapsulates control flow for a benchmark.
+pub trait ControlFlow: Send + Sync + fmt::Debug {
+    /// Reports a warning.
+    fn warning(&self, warning: &dyn fmt::Display);
+
+    /// Reports a non-recoverable error. This method never returns, terminating the benchmark executable.
+    fn error(&self, error: &dyn fmt::Display) -> !;
+
+    /// Specializes this control for a particular benchmark.
+    fn for_benchmark(&self, id: &BenchmarkId) -> Box<dyn ControlFlow>;
+}
+
+/// No-op implementation.
+impl ControlFlow for () {
+    fn warning(&self, _warning: &dyn fmt::Display) {
+        // do nothing
+    }
+
+    fn error(&self, error: &dyn fmt::Display) -> ! {
+        panic!("{error}");
+    }
+
+    fn for_benchmark(&self, _id: &BenchmarkId) -> Box<dyn ControlFlow> {
+        Box::new(())
     }
 }
 
@@ -92,33 +118,4 @@ pub trait BenchmarkReporter: Send + fmt::Debug {
 
     /// Reports output for a single benchmark.
     fn ok(self: Box<Self>, output: &BenchmarkOutput);
-
-    /// Reports a warning related to the benchmark.
-    ///
-    /// The default implementation does nothing.
-    fn warning(&mut self, warning: &dyn fmt::Display) {
-        // do nothing
-    }
-
-    /// Reports a (non-recoverable) benchmark error.
-    ///
-    /// The default implementation does nothing.
-    fn error(self: Box<Self>, error: &dyn fmt::Display) {
-        // do nothing
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct NoOpReporter;
-
-impl Reporter for NoOpReporter {
-    fn new_benchmark(&mut self, _id: &BenchmarkId) -> Box<dyn BenchmarkReporter> {
-        Box::new(Self)
-    }
-}
-
-impl BenchmarkReporter for NoOpReporter {
-    fn ok(self: Box<Self>, _output: &BenchmarkOutput) {
-        // Do nothing
-    }
 }

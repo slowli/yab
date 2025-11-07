@@ -4,7 +4,7 @@ use std::{
     any::Any,
     cmp,
     cmp::Ordering,
-    fmt, io, ops,
+    fmt, io, ops, process,
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -13,7 +13,7 @@ use anes::{
     Attribute, Color, ResetAttributes, SetAttribute, SetBackgroundColor, SetForegroundColor,
 };
 
-use super::{BenchmarkOutput, Reporter};
+use super::{BenchmarkOutput, ControlFlow, Reporter};
 use crate::{
     cachegrind::{AccessSummary, CachegrindFunction, CachegrindOutput, CachegrindStats},
     BenchmarkId, FullCachegrindStats,
@@ -134,17 +134,20 @@ impl<W: io::Write> LinePrinter<W> {
         self.print(format_args!(" {args}\n"));
     }
 
-    fn print_warning(&mut self, id: &BenchmarkId, args: fmt::Arguments<'_>) {
+    fn print_warning(&mut self, id: Option<&BenchmarkId>, args: &dyn fmt::Display) {
         self.bold()
             .bg(Color::Yellow)
             .fg(Color::White)
             .print_str(" WARN:");
-        self.print_str(" ");
-        self.print_id(id, true);
-        self.print(format_args!(": {args}\n"));
+        if let Some(id) = id {
+            self.print_str(" ");
+            self.print_id(id, true);
+            self.print_str(":");
+        }
+        self.print(format_args!(" {args}\n"));
     }
 
-    fn print_error(&mut self, id: Option<&BenchmarkId>, args: fmt::Arguments<'_>) {
+    fn print_error(&mut self, id: Option<&BenchmarkId>, args: &dyn fmt::Display) {
         self.bold()
             .bg(Color::Red)
             .fg(Color::White)
@@ -301,6 +304,13 @@ impl PrintingReporter {
     pub fn report_list_item(id: &BenchmarkId) {
         println!("{id}: benchmark");
     }
+
+    pub fn control(&self) -> impl ControlFlow {
+        PrintingBenchmarkControl {
+            reporter: self.clone(),
+            id: None,
+        }
+    }
 }
 
 impl<W: io::Write> PrintingReporter<W> {
@@ -313,14 +323,6 @@ impl<W: io::Write> PrintingReporter<W> {
             return;
         }
         self.lock_printer().print_debug(args);
-    }
-
-    pub(crate) fn report_error(&self, id: Option<&BenchmarkId>, err: &dyn fmt::Display) {
-        self.lock_printer().print_error(id, format_args!("{err}"));
-    }
-
-    fn report_warning(&self, id: &BenchmarkId, err: &dyn fmt::Display) {
-        self.lock_printer().print_warning(id, format_args!("{err}"));
     }
 }
 
@@ -494,24 +496,12 @@ impl<W: io::Write + fmt::Debug + Send> super::BenchmarkReporter for BenchmarkRep
             breakdown.print(&mut printer);
         }
     }
-
-    fn warning(&mut self, warning: &dyn fmt::Display) {
-        self.parent.report_warning(&self.bench_id, warning);
-    }
-
-    fn error(self: Box<Self>, error: &dyn fmt::Display) {
-        self.parent.report_error(Some(&self.bench_id), error);
-    }
 }
 
 impl<W> Reporter for PrintingReporter<W>
 where
     W: io::Write + fmt::Debug + Send + 'static,
 {
-    fn error(&mut self, error: &dyn fmt::Display) {
-        self.report_error(None, error);
-    }
-
     fn new_test(&mut self, id: &BenchmarkId) -> Box<dyn super::TestReporter> {
         Box::new(TestReporter {
             parent: self.clone(),
@@ -532,6 +522,34 @@ where
             parent: self.clone(),
             bench_id: id.clone(),
             started_at: None,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct PrintingBenchmarkControl<W = io::Stderr> {
+    reporter: PrintingReporter<W>,
+    id: Option<BenchmarkId>,
+}
+
+impl ControlFlow for PrintingBenchmarkControl {
+    fn warning(&self, warning: &dyn fmt::Display) {
+        self.reporter
+            .lock_printer()
+            .print_warning(self.id.as_ref(), warning);
+    }
+
+    fn error(&self, error: &dyn fmt::Display) -> ! {
+        self.reporter
+            .lock_printer()
+            .print_error(self.id.as_ref(), error);
+        process::exit(1);
+    }
+
+    fn for_benchmark(&self, id: &BenchmarkId) -> Box<dyn ControlFlow> {
+        Box::new(Self {
+            reporter: self.reporter.clone(),
+            id: Some(id.clone()),
         })
     }
 }

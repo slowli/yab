@@ -1,28 +1,37 @@
 //! Sequential reporter implementation.
 
-use std::{any::Any, fmt::Display};
+use std::{any::Any, mem, sync::Arc};
 
-use super::{BenchmarkOutput, BenchmarkReporter, Reporter, TestReporter};
+use super::{BenchmarkOutput, BenchmarkReporter, ControlFlow, Reporter, TestReporter};
 use crate::{BenchmarkId, CachegrindStats};
 
-#[derive(Debug, Default)]
-pub(crate) struct SeqReporter(pub Vec<Box<dyn Reporter>>);
+#[derive(Debug)]
+pub(crate) struct SeqReporter {
+    reporters: Vec<Box<dyn Reporter>>,
+    pub(crate) control: Arc<dyn ControlFlow>,
+}
 
 impl SeqReporter {
-    pub fn ok_all(self) {
-        for reporter in self.0 {
+    pub fn new(control: Arc<dyn ControlFlow>) -> Self {
+        Self {
+            reporters: vec![],
+            control,
+        }
+    }
+
+    pub fn push(&mut self, mut reporter: Box<dyn Reporter>) {
+        reporter.set_control(&self.control);
+        self.reporters.push(reporter);
+    }
+
+    pub fn ok_all(&mut self) {
+        for reporter in mem::take(&mut self.reporters) {
             reporter.ok();
         }
     }
 }
 
 impl Reporter for SeqReporter {
-    fn error(&mut self, error: &dyn Display) {
-        for reporter in &mut self.0 {
-            reporter.error(error);
-        }
-    }
-
     fn new_test(&mut self, id: &BenchmarkId) -> Box<dyn TestReporter> {
         struct Seq(Vec<Box<dyn TestReporter>>);
 
@@ -40,7 +49,10 @@ impl Reporter for SeqReporter {
             }
         }
 
-        let reporters = self.0.iter_mut().map(|reporter| reporter.new_test(id));
+        let reporters = self
+            .reporters
+            .iter_mut()
+            .map(|reporter| reporter.new_test(id));
         Box::new(Seq(reporters.collect()))
     }
 
@@ -66,21 +78,12 @@ impl Reporter for SeqReporter {
                     reporter.ok(output);
                 }
             }
-
-            fn warning(&mut self, warning: &dyn Display) {
-                for reporter in &mut self.0 {
-                    reporter.warning(warning);
-                }
-            }
-
-            fn error(self: Box<Self>, error: &dyn Display) {
-                for reporter in self.0 {
-                    reporter.error(error);
-                }
-            }
         }
 
-        let reporters = self.0.iter_mut().map(|reporter| reporter.new_benchmark(id));
+        let reporters = self
+            .reporters
+            .iter_mut()
+            .map(|reporter| reporter.new_benchmark(id));
         Box::new(Seq(reporters.collect()))
     }
 }

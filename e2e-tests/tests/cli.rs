@@ -137,10 +137,8 @@ fn comparison_transcript() {
         lib_snapshot("comparison"),
         [
             UserInput::command("cargo bench --bench all fib_short"),
-            UserInput::command(
-                "export CACHEGRIND_WRAPPER=\"$CACHEGRIND_WRAPPER:--profile=cmp\"",
-            )
-            .hide(),
+            UserInput::command("export CACHEGRIND_WRAPPER=\"$CACHEGRIND_WRAPPER:--profile=cmp\"")
+                .hide(),
             UserInput::command("cargo bench --bench all fib_short\n# after some changes..."),
         ],
     );

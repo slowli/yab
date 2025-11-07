@@ -8,7 +8,7 @@ use std::{
 use crate::{
     bencher::Baseline,
     options::BenchOptions,
-    reporter::{BenchmarkOutput, BenchmarkReporter, Reporter},
+    reporter::{BenchmarkOutput, BenchmarkReporter, ControlFlow, Reporter},
     BenchmarkId,
 };
 
@@ -17,6 +17,7 @@ pub(crate) struct BaselineSaver {
     out_path: PathBuf,
     stats: Arc<Mutex<Baseline>>,
     breakdown: bool,
+    control: Arc<dyn ControlFlow>,
 }
 
 impl BaselineSaver {
@@ -25,11 +26,16 @@ impl BaselineSaver {
             out_path,
             stats: Arc::default(),
             breakdown: options.breakdown,
+            control: Arc::new(()),
         }
     }
 }
 
 impl Reporter for BaselineSaver {
+    fn set_control(&mut self, control: &Arc<dyn ControlFlow>) {
+        self.control = control.clone();
+    }
+
     fn new_benchmark(&mut self, id: &BenchmarkId) -> Box<dyn BenchmarkReporter> {
         Box::new(BenchmarkBaselineReporter {
             id: id.clone(),
@@ -41,28 +47,28 @@ impl Reporter for BaselineSaver {
     fn ok(self: Box<Self>) {
         if let Some(parent_dir) = self.out_path.parent() {
             fs::create_dir_all(parent_dir).unwrap_or_else(|err| {
-                panic!(
+                self.control.error(&format_args!(
                     "failed creating parent dir for baseline file `{}`: {err}",
                     self.out_path.display()
-                );
+                ));
             });
         }
 
         let writer = fs::File::create(&self.out_path).unwrap_or_else(|err| {
-            panic!(
+            self.control.error(&format_args!(
                 "failed creating baseline file `{}`: {err}",
                 self.out_path.display()
-            )
+            ));
         });
         let writer = BufWriter::new(writer);
 
         let stats = Arc::into_inner(self.stats).expect("stats leaked");
         let stats = stats.into_inner().expect("stats are poisoned");
         serde_json::to_writer_pretty(writer, &stats).unwrap_or_else(|err| {
-            panic!(
+            self.control.error(&format_args!(
                 "failed writing baseline file `{}`: {err}",
                 self.out_path.display()
-            )
+            ));
         });
     }
 }
@@ -96,6 +102,7 @@ impl BenchmarkReporter for BenchmarkBaselineReporter {
 pub(crate) struct RegressionChecker {
     threshold: f64,
     regressed_benches: Arc<Mutex<Vec<(BenchmarkId, f64)>>>,
+    control: Arc<dyn ControlFlow>,
 }
 
 impl RegressionChecker {
@@ -103,11 +110,16 @@ impl RegressionChecker {
         Self {
             threshold,
             regressed_benches: Arc::default(),
+            control: Arc::new(()),
         }
     }
 }
 
 impl Reporter for RegressionChecker {
+    fn set_control(&mut self, control: &Arc<dyn ControlFlow>) {
+        self.control = control.clone();
+    }
+
     fn new_benchmark(&mut self, id: &BenchmarkId) -> Box<dyn BenchmarkReporter> {
         Box::new(RegressionBenchmarkChecker {
             parent: self.clone(),
@@ -133,13 +145,12 @@ impl Reporter for RegressionChecker {
                 }
             }
 
-            // FIXME: utilize the printer instead.
-            panic!(
+            self.control.error(&format_args!(
                 "{len} bench{plural} ha{s_or_ve} regressed by >{threshold:.1}%:\n{list}",
                 plural = if len == 1 { "" } else { "s" },
                 s_or_ve = if len == 1 { "s" } else { "ve" },
                 threshold = self.threshold * 100.0
-            );
+            ));
         }
     }
 }
@@ -165,11 +176,17 @@ impl BenchmarkReporter for RegressionBenchmarkChecker {
         let regression = regression as f64 / prev as f64;
         if regression > self.parent.threshold {
             self.parent
+                .control
+                .for_benchmark(&self.id)
+                .warning(&format_args!(
+                    "bench has regressed by {:.1}%",
+                    regression * 100.0
+                ));
+            self.parent
                 .regressed_benches
                 .lock()
                 .expect("`regressed_benches` is poisoned")
                 .push((self.id, regression));
-            // FIXME: print warning immediately
         }
     }
 }
