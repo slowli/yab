@@ -1,0 +1,74 @@
+{
+  "collect/hash_set": {
+    "summary": {
+      "instructions": {
+        "total": 1582709,
+        "l1_misses": 17,
+        "l3_misses": 17
+      },
+      "data_reads": {
+        "total": 120524,
+        "l1_misses": 2695,
+        "l3_misses": 3
+      },
+      "data_writes": {
+        "total": 136492,
+        "l1_misses": 8722,
+        "l3_misses": 2298
+      }
+    },
+    "breakdown": {
+      "__memset_avx2_unaligned_erms@./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S": {
+        "instructions": {
+          "total": 16417,
+          "l1_misses": 0,
+          "l3_misses": 0
+        },
+        "data_reads": {
+          "total": 2,
+          "l1_misses": 0,
+          "l3_misses": 0
+        },
+        "data_writes": {
+          "total": 16400,
+          "l1_misses": 256,
+          "l3_misses": 256
+        }
+      },
+      "hashbrown::map::HashMap<K,V,S,A>::insert": {
+        "instructions": {
+          "total": 1365763,
+          "l1_misses": 0,
+          "l3_misses": 0
+        },
+        "data_reads": {
+          "total": 110408,
+          "l1_misses": 2669,
+          "l3_misses": 0
+        },
+        "data_writes": {
+          "total": 70000,
+          "l1_misses": 8456,
+          "l3_misses": 2041
+        }
+      },
+      "<core::iter::adapters::map::Map<I,F> as core::iter::traits::iterator::Iterator>::fold": {
+        "instructions": {
+          "total": 200026,
+          "l1_misses": 0,
+          "l3_misses": 0
+        },
+        "data_reads": {
+          "total": 10014,
+          "l1_misses": 1,
+          "l3_misses": 0
+        },
+        "data_writes": {
+          "total": 50008,
+          "l1_misses": 0,
+          "l3_misses": 0
+        }
+      }
+    }
+  }
+}
