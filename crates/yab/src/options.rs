@@ -98,6 +98,7 @@ pub(crate) struct BenchOptions {
     /// Regression threshold (e.g., 0.1 for 10%). Only active with `--baseline`.
     #[arg(
         long,
+        env = "CACHEGRIND_REGRESSION_THRESHOLD",
         requires = "baseline",
         value_name = "RATIO",
         default_value_t = 0.05

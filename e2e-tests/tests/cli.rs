@@ -167,10 +167,8 @@ fn baseline_regression_failure() {
     config.with_template(plain_template()).test(
         lib_snapshot("baseline-regression"),
         [
-            // FIXME: specify threshold as env var
-            UserInput::command(
-                "cargo bench --bench all -- --vs pub:cmp --threshold 0.01 -q random_walk",
-            ),
+            UserInput::command("export CACHEGRIND_REGRESSION_THRESHOLD=0.01"),
+            UserInput::command("cargo bench --bench all -- --vs pub:cmp -q random_walk"),
         ],
     );
 }

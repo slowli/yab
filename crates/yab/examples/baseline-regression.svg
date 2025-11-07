@@ -1,5 +1,5 @@
 <!-- Created with term-transcript v0.4.0 (https://github.com/slowli/term-transcript) -->
-<svg viewBox="0 -22 720 268" width="720" height="268" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 -22 720 296" width="720" height="296" xmlns="http://www.w3.org/2000/svg">
   <switch>
     <g requiredExtensions="http://www.w3.org/1999/xhtml">
       <style>
@@ -67,10 +67,12 @@
       <circle cx="17" cy="-9" r="7" style="fill: #ff005b;"/>
       <circle cx="37" cy="-9" r="7" style="fill: #ffe755;"/>
       <circle cx="57" cy="-9" r="7" style="fill: #cee318;"/>
-      <svg x="0" y="10" width="720" height="226" viewBox="0 0 720 226">
-        <foreignObject width="720" height="226">
+      <svg x="0" y="10" width="720" height="254" viewBox="0 0 720 254">
+        <foreignObject width="720" height="254">
           <div xmlns="http://www.w3.org/1999/xhtml" class="container">
-            <div class="input input-failure" data-exit-status="1" title="This command exited with non-zero code"><pre><span class="prompt">$</span> cargo bench --bench all -- --vs pub:cmp --threshold 0.01 -q random_walk</pre></div>
+            <div class="input" data-exit-status="0"><pre><span class="prompt">$</span> export CACHEGRIND_REGRESSION_THRESHOLD&#x3D;0.01</pre></div>
+            <div class="output"><pre></pre></div>
+            <div class="input input-failure" data-exit-status="1" title="This command exited with non-zero code"><pre><span class="prompt">$</span> cargo bench --bench all -- --vs pub:cmp -q random_walk</pre></div>
             <div class="output"><pre>[<span class="bold fg10">√</span>] random_walk/1000000<span class="dimmed"> (10ms)</span>
 ├ Instructions           1800019
 └ Est. cycles            2698290
