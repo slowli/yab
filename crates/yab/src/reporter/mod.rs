@@ -44,7 +44,6 @@ pub trait Reporter: fmt::Debug {
     fn new_benchmark(&mut self, id: &BenchmarkId) -> Box<dyn BenchmarkReporter>;
 
     /// Signals to the reporter that processing tests / benchmarks has successfully completed.
-    /// This is mutually exclusive with [`Self::error()`].
     ///
     /// The default implementation does nothing.
     fn ok(self: Box<Self>) {

@@ -45,6 +45,19 @@
 //! - `--jobs N` / `-j N`: specifies the number of benchmarks to run in parallel. By default, it's equal
 //!   to the number of logical CPUs in the system.
 //!
+//! ## Baselines
+//!
+//! Similar to [`criterion`], `yab` allows managing named *baselines* for benchmarks.
+//!
+//! - To save a baseline, specify its name via the `--save-baseline` (or `--save`) argument.
+//! - To compare against a previously saved baseline, specify its name with the `--baseline` (or `--vs`) arg.
+//! - To print the baseline data, specify its name with the `--print` arg.
+//!
+//! By default, baselines are stored inside the `target/yab` directory like the other collected data.
+//! However, if the baseline name is prefixed with `pub:` (short for "public"),
+//! it's located in the `benches/$bench_crate_name` directory (i.e., near the bench code).
+//! This allows easily checking baselines into git to be used in CI etc.
+//!
 //! # Limitations
 //!
 //! - `cachegrind` has somewhat limited platform support (e.g., doesn't support Windows).
@@ -59,16 +72,9 @@
 //!   benchmarking framework for Rust.
 //! - [`iai-callgrind`](https://crates.io/crates/iai-callgrind) is an extended / reworked fork of `iai`.
 //!   Compared to it, `yab` prefers simplicity to versatility.
-//! - Benchmarking APIs are inspired by [`criterion`](https://crates.io/crates/criterion).
+//! - Benchmarking APIs are inspired by [`criterion`].
 //!
 //! # Crate features
-//!
-//! ## `serde`
-//!
-//! *(Off by default)*
-//!
-//! Derives `serde::{Serialize, Deserialize}` for [`BenchmarkOutput`], [`CachegrindStats`] and related
-//! types. Useful to save benchmark outputs when using a custom [`BenchmarkProcessor`].
 //!
 //! ## `instrumentation`
 //!
@@ -120,6 +126,7 @@
 //! ```
 //!
 //! [`cachegrind`]: https://valgrind.org/docs/manual/cg-manual.html
+//! [`criterion`]: https://crates.io/crates/criterion
 
 // Documentation settings.
 #![doc(html_root_url = "https://docs.rs/yab/0.1.0")]
