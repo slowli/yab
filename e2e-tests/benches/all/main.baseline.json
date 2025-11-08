@@ -94,22 +94,22 @@
       }
     }
   },
-  "collect/hash_set": {
+  "hash_set/collect": {
     "summary": {
       "instructions": {
-        "total": 1582709,
-        "l1_misses": 17,
-        "l3_misses": 17
+        "total": 1542645,
+        "l1_misses": 13,
+        "l3_misses": 13
       },
       "data_reads": {
-        "total": 120524,
-        "l1_misses": 2695,
+        "total": 110505,
+        "l1_misses": 2685,
         "l3_misses": 3
       },
       "data_writes": {
-        "total": 136492,
-        "l1_misses": 8722,
-        "l3_misses": 2298
+        "total": 96484,
+        "l1_misses": 8705,
+        "l3_misses": 2293
       }
     }
   },

@@ -220,7 +220,7 @@ fn assert_reference_stats(outputs: &HashMap<String, BenchmarkOutput>, full: bool
     let should_skip_complex_stats = env::var("YAB_SKIP_COMPLEX_STATS").is_ok();
     for (name, expected_stats) in &*EXPECTED_STATS {
         let expected_stats = expected_stats.summary.as_full().unwrap();
-        if name == "collect/hash_set" && should_skip_complex_stats {
+        if name == "hash_set/collect" && should_skip_complex_stats {
             continue;
         }
         println!("Comparing bench {name}");
@@ -418,7 +418,7 @@ fn using_custom_job_count() {
     let target_path = temp_dir.path().join("target");
 
     let status = Command::new(EXE_PATH)
-        .arg("--bench")
+        .args(["--bench", "fib"])
         .env(EXPORTER_OUTPUT_VAR, &out_path)
         .env("CACHEGRIND_OUT_DIR", &target_path)
         .stdout(Stdio::null())
@@ -431,7 +431,7 @@ fn using_custom_job_count() {
 
     for jobs in [1, 3] {
         let status = Command::new(EXE_PATH)
-            .args(["--jobs", &jobs.to_string(), "--bench"])
+            .args(["--jobs", &jobs.to_string(), "--bench", "fib"])
             .env(EXPORTER_OUTPUT_VAR, &out_path)
             .env("CACHEGRIND_OUT_DIR", &target_path)
             .stdout(Stdio::null())
