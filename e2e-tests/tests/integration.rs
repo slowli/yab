@@ -574,3 +574,13 @@ fn comparing_public_baselines_with_threshold() {
         .unwrap();
     assert_eq!(error, "1 bench has regressed by >1.0%:");
 }
+
+#[test]
+fn threshold_is_ignored_in_test_mode() {
+    let output = Command::new(EXE_PATH)
+        .env("CACHEGRIND_REGRESSION_THRESHOLD", "1%")
+        .output()
+        .expect("failed running benches");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(output.status.success(), "{stderr}");
+}
