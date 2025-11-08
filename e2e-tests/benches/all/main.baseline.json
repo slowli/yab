@@ -94,6 +94,63 @@
       }
     }
   },
+  "overlapping_captures/gen_array": {
+    "summary": {
+      "instructions": {
+        "total": 215025,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 79988,
+        "l1_misses": 1256,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 89983,
+        "l1_misses": 2502,
+        "l3_misses": 0
+      }
+    }
+  },
+  "hash_set/sum": {
+    "summary": {
+      "instructions": {
+        "total": 121280,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 11031,
+        "l1_misses": 2232,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 6,
+        "l1_misses": 2,
+        "l3_misses": 0
+      }
+    }
+  },
+  "overlapping_captures/gen_in_loop": {
+    "summary": {
+      "instructions": {
+        "total": 140016,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 5,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 10004,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    }
+  },
   "hash_set/collect": {
     "summary": {
       "instructions": {
@@ -110,6 +167,44 @@
         "total": 96484,
         "l1_misses": 8705,
         "l3_misses": 2293
+      }
+    }
+  },
+  "overlapping_captures/outer": {
+    "summary": {
+      "instructions": {
+        "total": 355075,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 80005,
+        "l1_misses": 1256,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 99997,
+        "l1_misses": 2502,
+        "l3_misses": 0
+      }
+    }
+  },
+  "hash_set/drain": {
+    "summary": {
+      "instructions": {
+        "total": 139369,
+        "l1_misses": 9,
+        "l3_misses": 9
+      },
+      "data_reads": {
+        "total": 11069,
+        "l1_misses": 2301,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 10019,
+        "l1_misses": 0,
+        "l3_misses": 0
       }
     }
   },
