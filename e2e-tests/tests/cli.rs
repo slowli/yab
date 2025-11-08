@@ -1,6 +1,7 @@
 //! CLI snapshot tests.
 
 use std::{
+    borrow::Cow,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{Mutex, MutexGuard, Once, PoisonError},
@@ -12,7 +13,7 @@ use tempfile::TempDir;
 use term_transcript::{
     svg::{Template, TemplateOptions},
     test::{MatchKind, TestConfig},
-    ShellOptions, StdShell, UserInput,
+    Captured, ShellOptions, StdShell, UserInput,
 };
 
 const MOCK_CACHEGRIND_PATH: &str = env!("CARGO_BIN_EXE_mock-cachegrind");
@@ -62,6 +63,7 @@ fn transform_output<'a>(output_lines: impl Iterator<Item = &'a str>) -> String {
     let mut should_output_line = false;
     let mut buffer = String::new();
     for line in output_lines {
+        let mut replaced = Cow::Borrowed(line);
         let current_output_line = should_output_line;
         if line.contains("Running") && line.contains("benches/all.rs") {
             should_output_line = true;
@@ -69,6 +71,12 @@ fn transform_output<'a>(output_lines: impl Iterator<Item = &'a str>) -> String {
         if line.contains("bench failed, to rerun pass") {
             // Truncate the following "Caused by" diagnostic output containing unpredictable paths etc.
             should_output_line = false;
+
+            // Remove styling because it's inconsistent across `cargo` versions.
+            let stripped_line = Captured::from(line.to_owned())
+                .to_plaintext()
+                .expect("unsupported styling");
+            replaced = Cow::Owned(stripped_line);
         }
         if !current_output_line {
             continue;
@@ -76,7 +84,7 @@ fn transform_output<'a>(output_lines: impl Iterator<Item = &'a str>) -> String {
 
         // Replace variable segments
         let replaced =
-            cachegrind_version_regex.replace(line, "cachegrind with version valgrind-3.23.0");
+            cachegrind_version_regex.replace(&replaced, "cachegrind with version valgrind-3.23.0");
         let replaced = options_regex.replace(&replaced, "BenchOptions { .. }");
         let replaced = duration_regex.replace(&replaced, "(10ms)");
         let replaced = code_location_regex.replace(&replaced, "$file:50");
