@@ -1,4 +1,14 @@
-use std::{env, io, io::IsTerminal, num, num::NonZeroUsize, process, process::Command};
+use std::{
+    env, error,
+    ffi::OsString,
+    io,
+    io::IsTerminal,
+    num,
+    num::NonZeroUsize,
+    path::{Path, PathBuf},
+    process,
+    process::Command,
+};
 
 use clap::{ColorChoice, Parser};
 use regex::Regex;
@@ -22,12 +32,41 @@ const DEFAULT_CACHEGRIND_WRAPPER: &[&str] = &[
     "--LL=8388608,16,64",
 ];
 
+fn positive_u64(raw: &str) -> Result<u64, Box<dyn error::Error + Send + Sync>> {
+    let val = raw.parse::<u64>()?;
+    if val == 0 {
+        Err("must be a positive number".into())
+    } else {
+        Ok(val)
+    }
+}
+
+fn f64_ratio(mut raw: &str) -> Result<f64, Box<dyn error::Error + Send + Sync>> {
+    let mut scale = 1.0;
+    if let Some(percent) = raw.strip_suffix('%') {
+        scale = 0.01;
+        raw = percent;
+    }
+
+    let val = raw.parse::<f64>()? * scale;
+    if !val.is_normal() {
+        return Err("must be a finite number".into());
+    }
+    if !(0.0..=1.0).contains(&val) {
+        return Err("ratio must be between 0 and 1".into());
+    }
+    Ok(val)
+}
+
 #[allow(clippy::struct_excessive_bools)] // fine for command-line args
 #[derive(Debug, Clone, Parser)]
 pub(crate) struct BenchOptions {
     /// Whether to run benchmarks as opposed to tests.
     #[arg(long, hide = true)]
     bench: bool,
+    /// Name of the bench.
+    #[arg(skip)]
+    pub bench_name: &'static str,
 
     /// Wrapper to call `cachegrind` as. Beware that changing params will likely render results not comparable.
     #[arg(
@@ -40,14 +79,19 @@ pub(crate) struct BenchOptions {
     cachegrind_wrapper: Vec<String>,
     /// Target number of instructions for the benchmark warm-up. Note that this number may not be reached
     /// for very fast benchmarks.
-    #[arg(long = "warm-up", default_value_t = 1_000_000)]
+    #[arg(long = "warm-up", default_value_t = 1_000_000, value_name = "INSTR", value_parser = positive_u64)]
     pub warm_up_instructions: u64,
     /// Maximum number of iterations for a single benchmark.
-    #[arg(long, default_value_t = 1_000)]
+    #[arg(long, default_value_t = 1_000, value_name = "ITER", value_parser = positive_u64)]
     pub max_iterations: u64,
     /// Base directory to put cachegrind outputs into. Will be created if absent.
-    #[arg(long, default_value = "target/yab", env = "CACHEGRIND_OUT_DIR")]
-    pub cachegrind_out_dir: String,
+    #[arg(
+        long,
+        value_name = "PATH",
+        default_value = "target/yab",
+        env = "CACHEGRIND_OUT_DIR"
+    )]
+    pub cachegrind_out_dir: PathBuf,
     /// Maximum number of benchmarks to run in parallel.
     #[arg(
         long,
@@ -70,12 +114,31 @@ pub(crate) struct BenchOptions {
     #[arg(long)]
     pub breakdown: bool,
 
+    /// Saves the full results as a named baseline.
+    #[arg(long, visible_alias = "save", value_name = "BASELINE")]
+    save_baseline: Option<String>,
+    /// Compares results against the specified baseline.
+    #[arg(long, short = 'B', visible_alias = "vs", value_name = "BASELINE")]
+    baseline: Option<String>,
+    /// Regression threshold (e.g., 0.1 or 10%). Only active with `--baseline`.
+    #[arg(
+        long,
+        env = "CACHEGRIND_REGRESSION_THRESHOLD",
+        requires = "baseline",
+        value_name = "RATIO",
+        value_parser = f64_ratio,
+        default_value_t = 0.05
+    )]
+    threshold: f64,
+
     /// List all benchmarks instead of running them.
     #[arg(long, conflicts_with = "print")]
     list: bool,
-    /// Prints latest benchmark results without running benchmarks.
-    #[arg(long, conflicts_with = "list")]
-    print: bool,
+    /// Prints latest benchmark results without running benchmarks. If `BASELINE` is specified, prints
+    /// the specified baseline instead.
+    #[arg(long, value_name = "BASELINE", conflicts_with = "list")]
+    #[allow(clippy::option_option)] // necessary for clap
+    print: Option<Option<String>>,
     /// Match benchmark names exactly.
     #[arg(long)]
     exact: bool,
@@ -85,24 +148,14 @@ pub(crate) struct BenchOptions {
 }
 
 impl BenchOptions {
-    pub fn validate(&self, reporter: &mut PrintingReporter) -> bool {
+    pub fn report(&self, reporter: &mut PrintingReporter) {
         reporter.report_debug(format_args!("Started benchmarking with options: {self:?}"));
-
-        if self.warm_up_instructions == 0 {
-            reporter.report_error(None, &"`warm_up_instructions` must be positive");
-            return false;
-        }
-        if self.max_iterations == 0 {
-            reporter.report_error(None, &"`max_iterations` must be positive");
-            return false;
-        }
-        true
     }
 
     pub fn mode(&self) -> BenchMode {
         if self.list {
             BenchMode::List
-        } else if self.print {
+        } else if self.print.is_some() {
             BenchMode::PrintResults
         } else if self.bench {
             BenchMode::Bench
@@ -137,11 +190,45 @@ impl BenchOptions {
         })
     }
 
-    pub fn cachegrind_wrapper(&self, out_file: &str) -> Command {
+    pub fn cachegrind_wrapper(&self, out_file: &Path) -> Command {
         let mut command = Command::new(&self.cachegrind_wrapper[0]);
         command.args(&self.cachegrind_wrapper[1..]);
-        command.arg(format!("--cachegrind-out-file={out_file}"));
+        let mut out_file_arg = OsString::from("--cachegrind-out-file=");
+        out_file_arg.push(out_file);
+        command.arg(out_file_arg);
         command
+    }
+
+    pub fn save_baseline_path(&self) -> Option<PathBuf> {
+        let path = self.save_baseline.as_ref()?;
+        Some(self.resolve_baseline_path(path))
+    }
+
+    fn resolve_baseline_path(&self, name: &str) -> PathBuf {
+        let (dir, name) = if let Some(pub_name) = name.strip_prefix("pub:") {
+            (Path::new("benches").join(self.bench_name), pub_name)
+        } else {
+            (self.cachegrind_out_dir.join("_baselines"), name)
+        };
+        dir.join(format!("{name}.baseline.json"))
+    }
+
+    pub fn baseline_path(&self) -> Option<PathBuf> {
+        let path = self.baseline.as_ref()?;
+        Some(self.resolve_baseline_path(path))
+    }
+
+    pub fn has_print_baseline(&self) -> bool {
+        matches!(&self.print, Some(Some(_)))
+    }
+
+    pub fn print_baseline_path(&self) -> Option<PathBuf> {
+        let path = self.print.as_ref()?.as_ref()?;
+        Some(self.resolve_baseline_path(path))
+    }
+
+    pub fn regression_threshold(&self) -> Option<f64> {
+        self.baseline.is_some().then_some(self.threshold)
     }
 }
 
@@ -271,5 +358,58 @@ mod tests {
         assert_eq!(options.iterations, 123);
         assert!(options.is_baseline);
         assert_eq!(options.id, "fib");
+    }
+
+    #[allow(clippy::float_cmp)] // intentional
+    #[test]
+    fn parsing_threshold() {
+        let options = BenchOptions::parse_from(["yab", "--baseline=main", "--threshold", "0.01"]);
+        assert_eq!(options.threshold, 0.01);
+
+        let options = BenchOptions::parse_from(["yab", "--baseline=main", "--threshold", "1%"]);
+        assert_eq!(options.threshold, 0.01);
+
+        let options = BenchOptions::parse_from(["yab", "--baseline=main", "--threshold", "2.5%"]);
+        assert!((options.threshold - 0.025).abs() < 1e-6, "{options:?}");
+
+        let err = BenchOptions::try_parse_from(["yab", "--baseline=main", "--threshold", "100"])
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("ratio must be between 0 and 1"),
+            "{err}"
+        );
+
+        let err = BenchOptions::try_parse_from(["yab", "--baseline=main", "--threshold", "Inf"])
+            .unwrap_err();
+        assert!(err.to_string().contains("must be a finite number"), "{err}");
+    }
+
+    #[test]
+    fn resolving_baseline_paths() {
+        let mut options =
+            BenchOptions::parse_from(["yab", "--baseline", "main", "--save-baseline", "pub:new"]);
+        options.bench_name = "yab";
+
+        assert_eq!(
+            options.baseline_path().unwrap(),
+            Path::new("target/yab/_baselines/main.baseline.json")
+        );
+        assert_eq!(
+            options.save_baseline_path().unwrap(),
+            Path::new("benches/yab/new.baseline.json")
+        );
+        assert!(options.print_baseline_path().is_none());
+
+        let mut options =
+            BenchOptions::parse_from(["yab", "--vs", "pub:main", "--print", "feature/alloc"]);
+        options.bench_name = "yab";
+        assert_eq!(
+            options.baseline_path().unwrap(),
+            Path::new("benches/yab/main.baseline.json")
+        );
+        assert_eq!(
+            options.print_baseline_path().unwrap(),
+            Path::new("target/yab/_baselines/feature/alloc.baseline.json")
+        );
     }
 }

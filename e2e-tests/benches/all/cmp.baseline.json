@@ -1,0 +1,40 @@
+{
+  "fib_short": {
+    "summary": {
+      "instructions": {
+        "total": 1739,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 280,
+        "l1_misses": 3,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 374,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    }
+  },
+  "random_walk/10000000": {
+    "summary": {
+      "instructions": {
+        "total": 1770011,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 280009,
+        "l1_misses": 99985,
+        "l3_misses": 11309
+      },
+      "data_writes": {
+        "total": 190007,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    }
+  }
+}

@@ -24,7 +24,8 @@ regex.workspace = true
 thiserror.workspace = true
 
 # Enables serialization for benchmark outputs.
-serde = { workspace = true, features = ["derive"], optional = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 
 [dev-dependencies]
 assert_matches.workspace = true

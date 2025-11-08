@@ -1,6 +1,7 @@
 //! CLI snapshot tests.
 
 use std::{
+    borrow::Cow,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{Mutex, MutexGuard, Once, PoisonError},
@@ -12,7 +13,7 @@ use tempfile::TempDir;
 use term_transcript::{
     svg::{Template, TemplateOptions},
     test::{MatchKind, TestConfig},
-    ShellOptions, StdShell, UserInput,
+    Captured, ShellOptions, StdShell, UserInput,
 };
 
 const MOCK_CACHEGRIND_PATH: &str = env!("CARGO_BIN_EXE_mock-cachegrind");
@@ -62,9 +63,20 @@ fn transform_output<'a>(output_lines: impl Iterator<Item = &'a str>) -> String {
     let mut should_output_line = false;
     let mut buffer = String::new();
     for line in output_lines {
+        let mut replaced = Cow::Borrowed(line);
         let current_output_line = should_output_line;
         if line.contains("Running") && line.contains("benches/all.rs") {
             should_output_line = true;
+        }
+        if line.contains("bench failed, to rerun pass") {
+            // Truncate the following "Caused by" diagnostic output containing unpredictable paths etc.
+            should_output_line = false;
+
+            // Remove styling because it's inconsistent across `cargo` versions.
+            let stripped_line = Captured::from(line.to_owned())
+                .to_plaintext()
+                .expect("unsupported styling");
+            replaced = Cow::Owned(stripped_line);
         }
         if !current_output_line {
             continue;
@@ -72,7 +84,7 @@ fn transform_output<'a>(output_lines: impl Iterator<Item = &'a str>) -> String {
 
         // Replace variable segments
         let replaced =
-            cachegrind_version_regex.replace(line, "cachegrind with version valgrind-3.23.0");
+            cachegrind_version_regex.replace(&replaced, "cachegrind with version valgrind-3.23.0");
         let replaced = options_regex.replace(&replaced, "BenchOptions { .. }");
         let replaced = duration_regex.replace(&replaced, "(10ms)");
         let replaced = code_location_regex.replace(&replaced, "$file:50");
@@ -137,11 +149,34 @@ fn comparison_transcript() {
         lib_snapshot("comparison"),
         [
             UserInput::command("cargo bench --bench all fib_short"),
-            UserInput::command(
-                "export CACHEGRIND_WRAPPER=\"$CACHEGRIND_WRAPPER:--profile=comparison\"",
-            )
-            .hide(),
+            UserInput::command("export CACHEGRIND_WRAPPER=\"$CACHEGRIND_WRAPPER:--profile=cmp\"")
+                .hide(),
             UserInput::command("cargo bench --bench all fib_short\n# after some changes..."),
+        ],
+    );
+}
+
+#[test]
+fn comparing_to_baseline() {
+    let (config, _lock) = test_config(false);
+    config.with_template(plain_template()).test(
+        lib_snapshot("cmp-baseline"),
+        [UserInput::command(
+            "cargo bench --bench all -- --vs pub:cmp fib_short\n\
+                # Compare current `fib_short` impl to the public `cmp` baseline\n\
+                # (one in the `benches/all` dir)",
+        )],
+    );
+}
+
+#[test]
+fn baseline_regression_failure() {
+    let (config, _lock) = test_config(true);
+    config.with_template(plain_template()).test(
+        lib_snapshot("baseline-regression"),
+        [
+            UserInput::command("export CACHEGRIND_REGRESSION_THRESHOLD=0.01"),
+            UserInput::command("cargo bench --bench all -- --vs pub:cmp -q random_walk"),
         ],
     );
 }
@@ -153,7 +188,7 @@ fn verbose_transcript() {
         lib_snapshot("verbose"),
         [
             UserInput::command("cargo bench --bench all -- --quiet random_walk/10000000"),
-            UserInput::command("export CACHEGRIND_WRAPPER=\"$CACHEGRIND_WRAPPER:--profile=comparison\"")
+            UserInput::command("export CACHEGRIND_WRAPPER=\"$CACHEGRIND_WRAPPER:--profile=cmp\"")
                 .hide(),
             UserInput::command("cargo bench --bench all -- --verbose random_walk/10000000\n# after some changes..."),
         ],
@@ -173,6 +208,17 @@ fn breakdown() {
         lib_snapshot("breakdown"),
         [UserInput::command(
             "cargo bench --bench all -- --quiet --breakdown collect/hash_set",
+        )],
+    );
+}
+
+#[test]
+fn printing_baseline() {
+    let (config, _lock) = test_config(true);
+    config.with_template(plain_template()).test(
+        lib_snapshot("print-baseline"),
+        [UserInput::command(
+            "cargo bench --bench all -- --print pub:cmp --quiet",
         )],
     );
 }

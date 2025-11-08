@@ -1,0 +1,211 @@
+{
+  "random_walk/1000000": {
+    "summary": {
+      "instructions": {
+        "total": 1800019,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 300008,
+        "l1_misses": 99564,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 200007,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    }
+  },
+  "random_walk/10000000": {
+    "summary": {
+      "instructions": {
+        "total": 1800019,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 300008,
+        "l1_misses": 99959,
+        "l3_misses": 11198
+      },
+      "data_writes": {
+        "total": 200007,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    }
+  },
+  "fib_short": {
+    "summary": {
+      "instructions": {
+        "total": 1741,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 273,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 362,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    }
+  },
+  "fib/25": {
+    "summary": {
+      "instructions": {
+        "total": 2363790,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 364186,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 485578,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    }
+  },
+  "fib_long": {
+    "summary": {
+      "instructions": {
+        "total": 26214741,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 4038813,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 5385082,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    }
+  },
+  "collect/hash_set": {
+    "summary": {
+      "instructions": {
+        "total": 1582709,
+        "l1_misses": 17,
+        "l3_misses": 17
+      },
+      "data_reads": {
+        "total": 120524,
+        "l1_misses": 2695,
+        "l3_misses": 3
+      },
+      "data_writes": {
+        "total": 136492,
+        "l1_misses": 8722,
+        "l3_misses": 2298
+      }
+    }
+  },
+  "fib/20": {
+    "summary": {
+      "instructions": {
+        "total": 213151,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 32845,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 43790,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    }
+  },
+  "guard": {
+    "summary": {
+      "instructions": {
+        "total": 1742,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 274,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 362,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    }
+  },
+  "fib/15": {
+    "summary": {
+      "instructions": {
+        "total": 19228,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 2968,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 3954,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    }
+  },
+  "guard/explicit": {
+    "summary": {
+      "instructions": {
+        "total": 1742,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 274,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 362,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    }
+  },
+  "fib_capture": {
+    "summary": {
+      "instructions": {
+        "total": 1742,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_reads": {
+        "total": 274,
+        "l1_misses": 0,
+        "l3_misses": 0
+      },
+      "data_writes": {
+        "total": 362,
+        "l1_misses": 0,
+        "l3_misses": 0
+      }
+    }
+  }
+}

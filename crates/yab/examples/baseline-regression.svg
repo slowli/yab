@@ -1,5 +1,5 @@
 <!-- Created with term-transcript v0.4.0 (https://github.com/slowli/term-transcript) -->
-<svg viewBox="0 -22 720 394" width="720" height="394" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 -22 720 296" width="720" height="296" xmlns="http://www.w3.org/2000/svg">
   <switch>
     <g requiredExtensions="http://www.w3.org/1999/xhtml">
       <style>
@@ -22,6 +22,12 @@
         }
         .input-hidden { display: none; }
         .output { margin-bottom: 6px; }
+        .input-failure {
+          border-left: 2px solid #ff005b;
+          border-right: 2px solid #ff005b;
+          background: rgba(255, 0, 65, 0.15);
+        }
+
         .bold,.prompt { font-weight: bold; }
         .italic { font-style: italic; }
         .underline { text-decoration: underline; }
@@ -61,28 +67,22 @@
       <circle cx="17" cy="-9" r="7" style="fill: #ff005b;"/>
       <circle cx="37" cy="-9" r="7" style="fill: #ffe755;"/>
       <circle cx="57" cy="-9" r="7" style="fill: #cee318;"/>
-      <svg x="0" y="10" width="720" height="352" viewBox="0 0 720 352">
-        <foreignObject width="720" height="352">
+      <svg x="0" y="10" width="720" height="254" viewBox="0 0 720 254">
+        <foreignObject width="720" height="254">
           <div xmlns="http://www.w3.org/1999/xhtml" class="container">
-            <div class="input" data-exit-status="0"><pre><span class="prompt">$</span> cargo bench --bench all -- fib/</pre></div>
-            <div class="output"><pre>[<span class="bold fg10">√</span>] fib/15<span class="dimmed"> (10ms)</span>
-├ Instructions             19228
-├ L1 hits                  26150
-├ L2/L3 hits                   0
-├ RAM accesses                 0
-└ Est. cycles              26150
-[<span class="bold fg10">√</span>] fib/20<span class="dimmed"> (10ms)</span>
-├ Instructions            213151
-├ L1 hits                 289786
-├ L2/L3 hits                   0
-├ RAM accesses                 0
-└ Est. cycles             289786
-[<span class="bold fg10">√</span>] fib/25<span class="dimmed"> (10ms)</span>
-├ Instructions           2363790
-├ L1 hits                3213554
-├ L2/L3 hits                   0
-├ RAM accesses                 0
-└ Est. cycles            3213554
+            <div class="input" data-exit-status="0"><pre><span class="prompt">$</span> export CACHEGRIND_REGRESSION_THRESHOLD&#x3D;0.01</pre></div>
+            <div class="output"><pre></pre></div>
+            <div class="input input-failure" data-exit-status="1" title="This command exited with non-zero code"><pre><span class="prompt">$</span> cargo bench --bench all -- --vs pub:cmp -q random_walk</pre></div>
+            <div class="output"><pre>[<span class="bold fg10">√</span>] random_walk/1000000<span class="dimmed"> (10ms)</span>
+├ Instructions           1800019
+└ Est. cycles            2698290
+[<span class="bold fg10">√</span>] random_walk/10000000<span class="dimmed"> (10ms)</span>
+├ Instructions           1800019<span class="fg9">       +30008 (+1.70%)</span>
+└ Est. cycles            3035810<span class="fg9">       +56573 (+1.90%)</span>
+<span class="bold fg15 bg11"> WARN:</span> random_walk/10000000<span class="dimmed"> @ e2e-tests/src/lib.rs:50</span>: bench has regressed by 1.<b class="hard-br"><br/></b>7%
+<span class="bold fg15 bg9">ERROR:</span> 1 bench has regressed by &gt;1.0%:
+  random_walk/10000000: +1.7%
+error: bench failed, to rerun pass `--bench all`
 </pre></div>
           </div>
         </foreignObject>

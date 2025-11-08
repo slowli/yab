@@ -1,5 +1,5 @@
 <!-- Created with term-transcript v0.4.0 (https://github.com/slowli/term-transcript) -->
-<svg viewBox="0 -22 720 394" width="720" height="394" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 -22 720 340" width="720" height="340" xmlns="http://www.w3.org/2000/svg">
   <switch>
     <g requiredExtensions="http://www.w3.org/1999/xhtml">
       <style>
@@ -61,28 +61,25 @@
       <circle cx="17" cy="-9" r="7" style="fill: #ff005b;"/>
       <circle cx="37" cy="-9" r="7" style="fill: #ffe755;"/>
       <circle cx="57" cy="-9" r="7" style="fill: #cee318;"/>
-      <svg x="0" y="10" width="720" height="352" viewBox="0 0 720 352">
-        <foreignObject width="720" height="352">
+      <svg x="0" y="10" width="720" height="298" viewBox="0 0 720 298">
+        <foreignObject width="720" height="298">
           <div xmlns="http://www.w3.org/1999/xhtml" class="container">
-            <div class="input" data-exit-status="0"><pre><span class="prompt">$</span> cargo bench --bench all -- fib/</pre></div>
-            <div class="output"><pre>[<span class="bold fg10">√</span>] fib/15<span class="dimmed"> (10ms)</span>
-├ Instructions             19228
-├ L1 hits                  26150
-├ L2/L3 hits                   0
-├ RAM accesses                 0
-└ Est. cycles              26150
-[<span class="bold fg10">√</span>] fib/20<span class="dimmed"> (10ms)</span>
-├ Instructions            213151
-├ L1 hits                 289786
-├ L2/L3 hits                   0
-├ RAM accesses                 0
-└ Est. cycles             289786
-[<span class="bold fg10">√</span>] fib/25<span class="dimmed"> (10ms)</span>
-├ Instructions           2363790
-├ L1 hits                3213554
-├ L2/L3 hits                   0
-├ RAM accesses                 0
-└ Est. cycles            3213554
+            <div class="input" data-exit-status="0"><pre><span class="prompt">$</span> cargo bench --bench all -- --print pub:cmp --quiet</pre></div>
+            <div class="output"><pre>[<span class="bold fg10">√</span>] fib_short
+├ Instructions              1739
+└ Est. cycles               2405
+<span class="bold fg15 bg11"> WARN:</span> fib_long<span class="dimmed"> @ e2e-tests/src/lib.rs:50</span>: no data for benchmark
+<span class="bold fg15 bg11"> WARN:</span> fib/15<span class="dimmed"> @ e2e-tests/src/lib.rs:50</span>: no data for benchmark
+<span class="bold fg15 bg11"> WARN:</span> fib/20<span class="dimmed"> @ e2e-tests/src/lib.rs:50</span>: no data for benchmark
+<span class="bold fg15 bg11"> WARN:</span> fib/25<span class="dimmed"> @ e2e-tests/src/lib.rs:50</span>: no data for benchmark
+<span class="bold fg15 bg11"> WARN:</span> fib_capture<span class="dimmed"> @ e2e-tests/src/lib.rs:50</span>: no data for benchmark
+<span class="bold fg15 bg11"> WARN:</span> guard<span class="dimmed"> @ e2e-tests/src/lib.rs:50</span>: no data for benchmark
+<span class="bold fg15 bg11"> WARN:</span> guard/explicit<span class="dimmed"> @ e2e-tests/src/lib.rs:50</span>: no data for benchmark
+<span class="bold fg15 bg11"> WARN:</span> random_walk/1000000<span class="dimmed"> @ e2e-tests/src/lib.rs:50</span>: no data for benchmark
+[<span class="bold fg10">√</span>] random_walk/10000000
+├ Instructions           1770011
+└ Est. cycles            2979237
+<span class="bold fg15 bg11"> WARN:</span> collect/hash_set<span class="dimmed"> @ e2e-tests/src/lib.rs:50</span>: no data for benchmark
 </pre></div>
           </div>
         </foreignObject>

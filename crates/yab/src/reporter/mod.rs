@@ -1,8 +1,7 @@
 //! Benchmark reporting.
 
-use std::{any::Any, fmt};
+use std::{any::Any, fmt, sync::Arc};
 
-#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 pub(crate) use self::{
@@ -11,12 +10,12 @@ pub(crate) use self::{
 };
 use crate::{cachegrind::CachegrindOutput, BenchmarkId, CachegrindStats};
 
+pub(crate) mod baseline;
 mod printer;
 mod seq;
 
 /// Output produced by the [`Bencher`](crate::Bencher) for a single benchmark.
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct BenchmarkOutput {
     /// Latest / current stats for the benchmark.
@@ -28,11 +27,10 @@ pub struct BenchmarkOutput {
 /// Reporter for benchmarking output that allows to extend or modify benchmarking logic.
 #[allow(unused_variables)]
 pub trait Reporter: fmt::Debug {
-    /// Reports a (non-recoverable) error not related to a particular benchmark.
-    /// This is mutually exclusive with [`Self::ok()`].
+    /// Sets the [`Logger`] for this reporter. This method is called once before any other operations.
     ///
     /// The default implementation does nothing.
-    fn error(&mut self, error: &dyn fmt::Display) {
+    fn set_logger(&mut self, logger: &Arc<dyn Logger>) {
         // do nothing
     }
 
@@ -46,11 +44,37 @@ pub trait Reporter: fmt::Debug {
     fn new_benchmark(&mut self, id: &BenchmarkId) -> Box<dyn BenchmarkReporter>;
 
     /// Signals to the reporter that processing tests / benchmarks has successfully completed.
-    /// This is mutually exclusive with [`Self::error()`].
     ///
     /// The default implementation does nothing.
     fn ok(self: Box<Self>) {
         // do nothing
+    }
+}
+
+/// Encapsulates logging for a benchmark.
+pub trait Logger: Send + Sync + fmt::Debug {
+    /// Reports a warning.
+    fn warning(&self, warning: &dyn fmt::Display);
+
+    /// Reports a non-recoverable error. This method never returns, terminating the benchmark executable.
+    fn fatal(&self, error: &dyn fmt::Display) -> !;
+
+    /// Specializes this logger for a particular benchmark.
+    fn for_benchmark(self: Arc<Self>, id: &BenchmarkId) -> Arc<dyn Logger>;
+}
+
+/// No-op implementation.
+impl Logger for () {
+    fn warning(&self, _warning: &dyn fmt::Display) {
+        // do nothing
+    }
+
+    fn fatal(&self, error: &dyn fmt::Display) -> ! {
+        panic!("{error}");
+    }
+
+    fn for_benchmark(self: Arc<Self>, _id: &BenchmarkId) -> Arc<dyn Logger> {
+        self
     }
 }
 
@@ -93,18 +117,4 @@ pub trait BenchmarkReporter: Send + fmt::Debug {
 
     /// Reports output for a single benchmark.
     fn ok(self: Box<Self>, output: &BenchmarkOutput);
-
-    /// Reports a warning related to the benchmark.
-    ///
-    /// The default implementation does nothing.
-    fn warning(&mut self, warning: &dyn fmt::Display) {
-        // do nothing
-    }
-
-    /// Reports a (non-recoverable) benchmark error.
-    ///
-    /// The default implementation does nothing.
-    fn error(self: Box<Self>, error: &dyn fmt::Display) {
-        // do nothing
-    }
 }

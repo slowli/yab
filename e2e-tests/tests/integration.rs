@@ -11,22 +11,21 @@ use std::{
 };
 
 use once_cell::sync::Lazy;
-use serde::Deserialize;
-use yab::{reporter::BenchmarkOutput, AccessSummary, CachegrindStats, FullCachegrindStats};
+use yab::{
+    reporter::BenchmarkOutput, AccessSummary, CachegrindOutput, CachegrindStats,
+    FullCachegrindStats,
+};
 use yab_e2e_tests::EXPORTER_OUTPUT_VAR;
 
 const EXE_PATH: &str = env!("CARGO_BIN_EXE_yab-e2e-tests");
 const MOCK_CACHEGRIND_PATH: &str = env!("CARGO_BIN_EXE_mock-cachegrind");
 
-#[derive(Debug, Deserialize)]
-struct AllStats {
-    default: HashMap<String, FullCachegrindStats>,
-}
+type Baseline = HashMap<String, CachegrindOutput>;
 
 // Because benchmarked functions are simple, hopefully the snapshot won't depend much on architecture,
 // Rust compiler version etc.
-static EXPECTED_STATS: Lazy<AllStats> =
-    Lazy::new(|| serde_json::from_str(include_str!("../src/bin/all-stats.json")).unwrap());
+static EXPECTED_STATS: Lazy<Baseline> =
+    Lazy::new(|| serde_json::from_str(include_str!("../benches/all/main.baseline.json")).unwrap());
 
 const EXPECTED_BENCH_NAMES: &[&str] = &[
     "fib_short",
@@ -219,7 +218,8 @@ fn assert_reference_stats(outputs: &HashMap<String, BenchmarkOutput>, full: bool
     }
 
     let should_skip_complex_stats = env::var("YAB_SKIP_COMPLEX_STATS").is_ok();
-    for (name, expected_stats) in &EXPECTED_STATS.default {
+    for (name, expected_stats) in &*EXPECTED_STATS {
+        let expected_stats = expected_stats.summary.as_full().unwrap();
         if name == "collect/hash_set" && should_skip_complex_stats {
             continue;
         }
@@ -272,7 +272,8 @@ fn benchmarking_everything_with_mock_cachegrind() {
 
     let outputs = read_outputs(&out_path);
     // Check that outputs exactly match the sampled ones
-    for (name, expected_stats) in &EXPECTED_STATS.default {
+    for (name, expected_stats) in &*EXPECTED_STATS {
+        let expected_stats = expected_stats.summary.as_full().unwrap();
         let actual_stats = outputs[name].stats.summary.as_full().unwrap();
         assert_eq!(actual_stats, expected_stats);
     }
@@ -315,7 +316,8 @@ fn test_handling_interrupts(temp_dir: &tempfile::TempDir) {
     assert!(output.status.success(), "{stderr}");
 
     let outputs = read_outputs(&out_path);
-    for (name, expected_stats) in &EXPECTED_STATS.default {
+    for (name, expected_stats) in &*EXPECTED_STATS {
+        let expected_stats = expected_stats.summary.as_full().unwrap();
         let actual_stats = outputs[name].stats.summary.as_full().unwrap();
         assert_eq!(actual_stats, expected_stats);
     }
@@ -327,7 +329,7 @@ fn benchmarking_with_mock_cachegrind_and_custom_profile() {
     let out_path = temp_dir.path().join("out.json");
     let target_path = temp_dir.path().join("target");
 
-    let mock_cachegrind = format!("{MOCK_CACHEGRIND_PATH}:--profile=comparison");
+    let mock_cachegrind = format!("{MOCK_CACHEGRIND_PATH}:--profile=cmp");
     let output = Command::new(EXE_PATH)
         .args(["--bench", "fib_short"])
         .env(EXPORTER_OUTPUT_VAR, &out_path)
@@ -504,4 +506,71 @@ fn disabling_cache_simulation() {
     );
 
     assert_reference_stats(&outputs, false);
+}
+
+#[test]
+fn printing_public_baseline() {
+    let output = Command::new(EXE_PATH)
+        .arg("--print=pub:main")
+        .output()
+        .expect("failed running benches");
+    assert!(output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let benchmark_names: HashSet<_> = stderr
+        .lines()
+        .filter_map(|line| line.strip_prefix("[√] "))
+        .collect();
+    for &name in EXPECTED_BENCH_NAMES {
+        assert!(
+            benchmark_names.contains(name),
+            "{benchmark_names:?} doesn't contain {name}"
+        );
+    }
+}
+
+#[test]
+fn comparing_public_baselines() {
+    let output = Command::new(EXE_PATH)
+        .args(["--print=pub:main", "--vs=pub:cmp", "random_walk"])
+        .output()
+        .expect("failed running benches");
+    assert!(output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let mut lines = stderr.lines();
+    assert!(
+        lines.any(|line| line == "├ Instructions           1800019       +30008 (+1.70%)"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn comparing_public_baselines_with_threshold() {
+    let output = Command::new(EXE_PATH)
+        .args([
+            "--print=pub:main",
+            "--vs=pub:cmp",
+            "--threshold=0.01",
+            "random_walk",
+        ])
+        .output()
+        .expect("failed running benches");
+    assert!(!output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let warn = stderr
+        .lines()
+        .find_map(|line| line.strip_prefix(" WARN: "))
+        .unwrap();
+    assert!(
+        warn.contains("random_walk/10000000") && warn.contains("bench has regressed by 1.7%"),
+        "{stderr}"
+    );
+
+    let error = stderr
+        .lines()
+        .find_map(|line| line.strip_prefix("ERROR: "))
+        .unwrap();
+    assert_eq!(error, "1 bench has regressed by >1.0%:");
 }

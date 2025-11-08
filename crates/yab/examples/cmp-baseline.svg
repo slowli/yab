@@ -1,5 +1,5 @@
 <!-- Created with term-transcript v0.4.0 (https://github.com/slowli/term-transcript) -->
-<svg viewBox="0 -22 720 394" width="720" height="394" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 -22 720 214" width="720" height="214" xmlns="http://www.w3.org/2000/svg">
   <switch>
     <g requiredExtensions="http://www.w3.org/1999/xhtml">
       <style>
@@ -61,28 +61,18 @@
       <circle cx="17" cy="-9" r="7" style="fill: #ff005b;"/>
       <circle cx="37" cy="-9" r="7" style="fill: #ffe755;"/>
       <circle cx="57" cy="-9" r="7" style="fill: #cee318;"/>
-      <svg x="0" y="10" width="720" height="352" viewBox="0 0 720 352">
-        <foreignObject width="720" height="352">
+      <svg x="0" y="10" width="720" height="172" viewBox="0 0 720 172">
+        <foreignObject width="720" height="172">
           <div xmlns="http://www.w3.org/1999/xhtml" class="container">
-            <div class="input" data-exit-status="0"><pre><span class="prompt">$</span> cargo bench --bench all -- fib/</pre></div>
-            <div class="output"><pre>[<span class="bold fg10">√</span>] fib/15<span class="dimmed"> (10ms)</span>
-├ Instructions             19228
-├ L1 hits                  26150
-├ L2/L3 hits                   0
+            <div class="input" data-exit-status="0"><pre><span class="prompt">$</span> cargo bench --bench all -- --vs pub:cmp fib_short
+# Compare current &#x60;fib_short&#x60; impl to the public &#x60;cmp&#x60; baseline
+# (one in the &#x60;benches/all&#x60; dir)</pre></div>
+            <div class="output"><pre>[<span class="bold fg10">√</span>] fib_short<span class="dimmed"> (10ms)</span>
+├ Instructions              1741<span class="fg9">           +2 (+0.12%)</span>
+├ L1 hits                   2376<span class="fg10">          -14 (-0.59%)</span>
+├ L2/L3 hits                   0<span class="fg10">           -3 (-100.00%)</span>
 ├ RAM accesses                 0
-└ Est. cycles              26150
-[<span class="bold fg10">√</span>] fib/20<span class="dimmed"> (10ms)</span>
-├ Instructions            213151
-├ L1 hits                 289786
-├ L2/L3 hits                   0
-├ RAM accesses                 0
-└ Est. cycles             289786
-[<span class="bold fg10">√</span>] fib/25<span class="dimmed"> (10ms)</span>
-├ Instructions           2363790
-├ L1 hits                3213554
-├ L2/L3 hits                   0
-├ RAM accesses                 0
-└ Est. cycles            3213554
+└ Est. cycles               2376<span class="fg10">          -29 (-1.21%)</span>
 </pre></div>
           </div>
         </foreignObject>

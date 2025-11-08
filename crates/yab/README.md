@@ -109,6 +109,31 @@ Verbose output also outputs breakdown by function:
 
 ![Breakdown by function](examples/breakdown.svg)
 
+### Baselines
+
+Similar to [`criterion`], `yab` allows managing named *baselines* for benchmarks.
+
+- To save a baseline, specify its name via the `--save-baseline` (or `--save`) argument.
+- To compare against a previously saved baseline, specify its name with the `--baseline` (or `--vs`) arg.
+- To print the baseline data, specify its name with the `--print` arg.
+
+By default, baselines are stored inside the `target/yab` directory like the other collected data.
+However, if the baseline name is prefixed with `pub:` (short for "public"),
+it's located in the `benches/$bench_crate_name` directory (i.e., near the bench code).
+This allows easily checking baselines into git to be used in CI etc.
+
+![Comparing to baseline](examples/cmp-baseline.svg)
+
+If the baseline doesn't contain any benchmarks from the code, it'll be highlighted as warnings:
+
+![Printing baseline data](examples/print-baseline.svg)
+
+When comparing against a baseline, the benchmark will fail on significant regression.
+Regression is defined in terms of executed instructions. The regression threshold is 5% by default;
+it can be controlled via the `--threshold` command-line arg or the `CACHEGRIND_REGRESSION_THRESHOLD` env var.
+
+![Benchmark failing on regression](examples/baseline-regression.svg)
+
 ## Limitations
 
 - `cachegrind` has somewhat limited platform support (e.g., doesn't support Windows).
@@ -123,7 +148,7 @@ Verbose output also outputs breakdown by function:
   benchmarking framework for Rust.
 - [`iai-callgrind`](https://crates.io/crates/iai-callgrind) is an extended / reworked fork of `iai`.
   Compared to it, `yab` prefers simplicity to versatility.
-- Benchmarking APIs are inspired by [`criterion`](https://crates.io/crates/criterion).
+- Benchmarking APIs are inspired by [`criterion`].
 
 ## License
 
@@ -135,3 +160,4 @@ for inclusion in `yab` by you, as defined in the Apache-2.0 license,
 shall be dual licensed as above, without any additional terms or conditions.
 
 [`cachegrind`]: https://valgrind.org/docs/manual/cg-manual.html
+[`criterion`]: https://crates.io/crates/criterion

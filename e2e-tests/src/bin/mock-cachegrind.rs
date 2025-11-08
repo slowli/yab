@@ -11,8 +11,7 @@ use std::{
     time::Duration,
 };
 
-use serde::Deserialize;
-use yab::{CachegrindDataPoint, CachegrindFunction, FullCachegrindStats};
+use yab::{CachegrindDataPoint, CachegrindOutput, FullCachegrindStats};
 
 const CONST_OVERHEAD: FullCachegrindStats = FullCachegrindStats {
     instructions: CachegrindDataPoint {
@@ -50,16 +49,36 @@ const ITER_OVERHEAD: FullCachegrindStats = FullCachegrindStats {
     },
 };
 
-#[derive(Debug, Deserialize)]
+type Baseline = HashMap<String, CachegrindOutput>;
+
+macro_rules! include_baseline {
+    ($name:tt) => {
+        serde_json::from_str::<Baseline>(include_str!(concat!(
+            "../../benches/all/",
+            $name,
+            ".baseline.json"
+        )))
+        .expect(concat!("failed parsing baseline ", $name))
+    };
+}
+
+#[derive(Debug)]
 struct AllStats {
-    default: HashMap<String, FullCachegrindStats>,
-    breakdown: HashMap<String, HashMap<CachegrindFunction, FullCachegrindStats>>,
-    #[serde(flatten)]
-    other_profiles: HashMap<String, HashMap<String, FullCachegrindStats>>,
+    default: Baseline,
+    breakdown: Baseline,
+    other_profiles: HashMap<String, Baseline>,
 }
 
 impl AllStats {
-    fn get(&self, bench_name: &str, profile: Option<&str>) -> &FullCachegrindStats {
+    fn load() -> Self {
+        Self {
+            default: include_baseline!("main"),
+            breakdown: include_baseline!("breakdown"),
+            other_profiles: HashMap::from([("cmp".to_owned(), include_baseline!("cmp"))]),
+        }
+    }
+
+    fn get(&self, bench_name: &str, profile: Option<&str>) -> &CachegrindOutput {
         let profile_stats = profile.and_then(|profile| {
             let profile = self.other_profiles.get(profile).unwrap_or_else(|| {
                 panic!("Profile `{profile}` is undefined");
@@ -101,9 +120,12 @@ fn main() {
     };
     let bench_name = &args_to_bench_binary[4];
 
-    let stats: AllStats = serde_json::from_str(include_str!("all-stats.json"))
-        .expect("cannot deserialize sample stats");
-    let bench_stats = *stats.get(bench_name, profile.as_deref());
+    let stats = AllStats::load();
+    let bench_stats = *stats
+        .get(bench_name, profile.as_deref())
+        .summary
+        .as_full()
+        .unwrap();
 
     let mut full_stats =
         bench_stats * (iter_count - 1) + CONST_OVERHEAD + ITER_OVERHEAD * iter_count;
@@ -127,9 +149,11 @@ fn main() {
     .unwrap();
 
     if !is_baseline {
-        if let Some(breakdown) = stats.breakdown.get(bench_name) {
+        if let Some(stats) = stats.breakdown.get(bench_name) {
+            let breakdown = &stats.breakdown;
             let mut functions_by_file = HashMap::<_, Vec<_>>::new();
             for (function, fn_stats) in breakdown {
+                let fn_stats = fn_stats.as_full().unwrap();
                 functions_by_file
                     .entry(function.filename().unwrap_or("???"))
                     .or_default()
