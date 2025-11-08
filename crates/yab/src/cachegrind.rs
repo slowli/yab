@@ -613,14 +613,12 @@ impl CachegrindFunction {
     }
 }
 
-pub(crate) fn run_instrumented<const N: usize, T>(
-    mut bench: impl FnMut([Capture; N]) -> T,
+pub(crate) fn run_instrumented<const N: usize>(
+    mut bench: impl FnMut([Capture; N]),
     iterations: u64,
     is_baseline: bool,
     active_capture: usize,
 ) {
-    let mut outputs = Vec::with_capacity(usize::try_from(iterations).expect("too many iterations"));
-
     #[cfg(feature = "instrumentation")]
     crabgrind::cachegrind::start_instrumentation();
 
@@ -634,7 +632,7 @@ pub(crate) fn run_instrumented<const N: usize, T>(
                 },
             ),
         });
-        outputs.push(crate::black_box(bench(captures)));
+        bench(captures);
     }
 
     // Test outputs are intentionally never dropped

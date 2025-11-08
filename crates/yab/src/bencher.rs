@@ -536,7 +536,15 @@ impl Bencher {
         self
     }
 
-    /// FIXME
+    /// Same as [`Self::bench_with_capture()`], but supports multiple captures. This allows naturally sharing
+    /// logic among related benchmarks (as an example, creating data and then consuming it).
+    ///
+    /// Note that there is no requirement that captures are disjoint; indeed, they may overlap, and it's useful for some use cases
+    /// (e.g., to measure a high-level operation *and* its breakdown).
+    ///
+    /// # Arguments
+    ///
+    /// Use the [`captures!`](crate::captures!) macro to idiomatically create the second argument.
     #[track_caller]
     #[inline]
     pub fn bench_with_captures<const N: usize>(
