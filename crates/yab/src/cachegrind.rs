@@ -1,6 +1,7 @@
 //! `cachegrind`-related logic.
 
 use std::{
+    array,
     borrow::Cow,
     collections::HashMap,
     convert::Infallible,
@@ -132,6 +133,7 @@ pub(crate) struct SpawnArgs<'a> {
     pub out_path: &'a Path,
     pub this_executable: &'a str,
     pub id: &'a BenchmarkId,
+    pub active_capture: usize,
     pub iterations: u64,
     pub is_baseline: bool,
 }
@@ -142,6 +144,7 @@ pub(crate) fn spawn_instrumented(args: SpawnArgs) -> Result<CachegrindOutput, Ca
         out_path,
         this_executable,
         id,
+        active_capture,
         iterations,
         is_baseline,
     } = args;
@@ -157,7 +160,8 @@ pub(crate) fn spawn_instrumented(args: SpawnArgs) -> Result<CachegrindOutput, Ca
     let options = CachegrindOptions {
         iterations,
         is_baseline,
-        id: id.to_string(),
+        id: id.to_string_without_capture(),
+        active_capture,
     };
     options.push_args(&mut command);
 
@@ -609,10 +613,11 @@ impl CachegrindFunction {
     }
 }
 
-pub(crate) fn run_instrumented<T>(
-    mut bench: impl FnMut(Capture) -> T,
+pub(crate) fn run_instrumented<const N: usize, T>(
+    mut bench: impl FnMut([Capture; N]) -> T,
     iterations: u64,
     is_baseline: bool,
+    active_capture: usize,
 ) {
     let mut outputs = Vec::with_capacity(usize::try_from(iterations).expect("too many iterations"));
 
@@ -620,14 +625,16 @@ pub(crate) fn run_instrumented<T>(
     crabgrind::cachegrind::start_instrumentation();
 
     for i in 1..=iterations {
-        let instrumentation = Capture {
-            behavior: crate::black_box(match (i == iterations, is_baseline) {
-                (false, _) => CaptureBehavior::NoOp,
-                (true, true) => CaptureBehavior::TerminateOnStart,
-                (true, false) => CaptureBehavior::TerminateOnEnd,
-            }),
-        };
-        outputs.push(crate::black_box(bench(instrumentation)));
+        let captures = array::from_fn(|idx| Capture {
+            behavior: crate::black_box(
+                match (i == iterations && idx == active_capture, is_baseline) {
+                    (false, _) => CaptureBehavior::NoOp,
+                    (true, true) => CaptureBehavior::TerminateOnStart,
+                    (true, false) => CaptureBehavior::TerminateOnEnd,
+                },
+            ),
+        });
+        outputs.push(crate::black_box(bench(captures)));
     }
 
     // Test outputs are intentionally never dropped
