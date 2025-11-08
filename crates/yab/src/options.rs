@@ -124,7 +124,6 @@ pub(crate) struct BenchOptions {
     #[arg(
         long,
         env = "CACHEGRIND_REGRESSION_THRESHOLD",
-        requires = "baseline",
         value_name = "RATIO",
         value_parser = f64_ratio,
         default_value_t = 0.05
