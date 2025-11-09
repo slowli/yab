@@ -1,7 +1,7 @@
 //! [`Bencher`] and tightly related types.
 
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
     env, fmt, fs,
     io::BufReader,
     iter, mem, panic,
@@ -23,7 +23,7 @@ use crate::{
     BenchmarkId, Capture,
 };
 
-pub(crate) type Baseline = HashMap<String, CachegrindOutput>;
+pub(crate) type Baseline = BTreeMap<String, CachegrindOutput>;
 
 /// Mode in which the bencher is currently executing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
