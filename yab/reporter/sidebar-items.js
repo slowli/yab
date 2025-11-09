@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["BenchmarkOutput"],"trait":["BenchmarkReporter","Logger","Reporter","TestReporter"]};

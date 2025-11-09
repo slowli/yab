@@ -1,0 +1,108 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="YAB is Yet Another Benchmarking framework powered by `cachegrind` from the Valgrind tool suite. It collects reproducible measurements of Rust code (e.g., the number of executed instructions, number of L1 and L2/L3 cache hits and RAM accesses), making it possible to use in CI etc."><title>yab - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-ca0dd0c4.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="yab" data-themes="" data-resource-suffix="" data-rustdoc-version="1.93.0-nightly (bd3ac0330 2025-11-01)" data-channel="nightly" data-search-js="search-5c29b3b5.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../static.files/storage-e2aeef58.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Crate yab</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../yab/index.html">yab</a><span class="version">0.1.0</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#features" title="Features">Features</a></li><li><a href="#how-to-use" title="How to use">How to use</a><ul><li><a href="#configuration-options" title="Configuration options">Configuration options</a></li><li><a href="#baselines" title="Baselines">Baselines</a></li></ul></li><li><a href="#limitations" title="Limitations">Limitations</a></li><li><a href="#alternatives-and-similar-tools" title="Alternatives and similar tools">Alternatives and similar tools</a></li><li><a href="#crate-features" title="Crate features">Crate features</a><ul><li><a href="#instrumentation" title="`instrumentation`"><code>instrumentation</code></a></li></ul></li><li><a href="#examples" title="Examples">Examples</a></li></ul><h3><a href="#modules">Crate Items</a></h3><ul class="block"><li><a href="#modules" title="Modules">Modules</a></li><li><a href="#macros" title="Macros">Macros</a></li><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#enums" title="Enums">Enums</a></li><li><a href="#functions" title="Functions">Functions</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><h1>Crate <span>yab</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/yab/lib.rs.html#1-174">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>YAB is <strong>Y</strong>et <strong>A</strong>nother <strong>B</strong>enchmarking framework powered by <a href="https://valgrind.org/docs/manual/cg-manual.html"><code>cachegrind</code></a> from the Valgrind tool suite.
+It collects reproducible measurements of Rust code (e.g., the number of executed instructions,
+number of L1 and L2/L3 cache hits and RAM accesses), making it possible to use in CI etc.</p>
+<h2 id="features"><a class="doc-anchor" href="#features">§</a>Features</h2>
+<ul>
+<li>Supports newer <code>cachegrind</code> versions and customizing the <code>cachegrind</code> wrapper.</li>
+<li>Supports capturing only instruction counts (i.e., not simulating CPU caches).</li>
+<li>Conditionally injects <code>CACHEGRIND_{START|STOP}_INSTRUMENTATION</code> macros (available in <code>cachegrind</code>
+3.22.0+) allowing for more precise measurements. See <a href="#crate-features">crate features</a> below.</li>
+<li>Supports configurable warm-up (defined in terms of executed instructions) before the capture.</li>
+</ul>
+<h2 id="how-to-use"><a class="doc-anchor" href="#how-to-use">§</a>How to use</h2>
+<p>Define a benchmark binary and include it into your crate manifest:</p>
+<div class="example-wrap"><pre class="language-toml"><code>[[bench]]
+name = &quot;your_bench&quot;
+harness = false</code></pre></div>
+<p>In the bench source (<code>benches/your_bench.rs</code>), define a function with signature <code>fn(&amp;mut</code> <a href="struct.Bencher.html" title="struct yab::Bencher"><code>Bencher</code></a><code>)</code>
+and wrap it in the <a href="macro.main.html" title="macro yab::main"><code>main!</code></a> macro:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>yab::Bencher;
+
+<span class="kw">fn </span>benchmarks(bencher: <span class="kw-2">&amp;mut </span>Bencher) {
+    <span class="comment">// define your benchmarking code here
+</span>}
+
+<span class="macro">yab::main!</span>(benchmarks);</code></pre></div>
+<p>Run benchmarks as usual using <code>cargo bench</code> (or <code>cargo test --bench ...</code> to test them).</p>
+<h3 id="configuration-options"><a class="doc-anchor" href="#configuration-options">§</a>Configuration options</h3>
+<p>Run <code>cargo bench ... -- --help</code> to get help on the supported configuration options. Some of the
+common options are:</p>
+<ul>
+<li><code>--list</code>: lists benchmarks without running them.</li>
+<li><code>--print</code>: prints results of the latest run instead of running benchmarks.</li>
+<li><code>--jobs N</code> / <code>-j N</code>: specifies the number of benchmarks to run in parallel. By default, it’s equal
+to the number of logical CPUs in the system.</li>
+</ul>
+<h3 id="baselines"><a class="doc-anchor" href="#baselines">§</a>Baselines</h3>
+<p>Similar to <a href="https://crates.io/crates/criterion"><code>criterion</code></a>, <code>yab</code> allows managing named <em>baselines</em> for benchmarks.</p>
+<ul>
+<li>To save a baseline, specify its name via the <code>--save-baseline</code> (or <code>--save</code>) argument.</li>
+<li>To compare against a previously saved baseline, specify its name with the <code>--baseline</code> (or <code>--vs</code>) arg.</li>
+<li>To print the baseline data, specify its name with the <code>--print</code> arg.</li>
+</ul>
+<p>By default, baselines are stored inside the <code>target/yab</code> directory like the other collected data.
+However, if the baseline name is prefixed with <code>pub:</code> (short for “public”),
+it’s located in the <code>benches/$bench_crate_name</code> directory (i.e., near the bench code).
+This allows easily checking baselines into git to be used in CI etc.</p>
+<h2 id="limitations"><a class="doc-anchor" href="#limitations">§</a>Limitations</h2>
+<ul>
+<li><code>cachegrind</code> has somewhat limited platform support (e.g., doesn’t support Windows).</li>
+<li><code>cachegrind</code> uses simplistic / outdated CPU cache simulation to the point that recent versions
+disable this simulation altogether by default.</li>
+<li><code>cachegrind</code> has limited support when simulating multi-threaded environment.</li>
+<li>Even small changes in the benchmarked code can lead to (generally small) divergences in the measured stats.</li>
+</ul>
+<h2 id="alternatives-and-similar-tools"><a class="doc-anchor" href="#alternatives-and-similar-tools">§</a>Alternatives and similar tools</h2>
+<ul>
+<li>This crate is heavily inspired by <a href="https://crates.io/crates/iai"><code>iai</code></a>, <em>the</em> original <code>cachegrind</code>-based
+benchmarking framework for Rust.</li>
+<li><a href="https://crates.io/crates/iai-callgrind"><code>iai-callgrind</code></a> is an extended / reworked fork of <code>iai</code>.
+Compared to it, <code>yab</code> prefers simplicity to versatility.</li>
+<li>Benchmarking APIs are inspired by <a href="https://crates.io/crates/criterion"><code>criterion</code></a>.</li>
+</ul>
+<h2 id="crate-features"><a class="doc-anchor" href="#crate-features">§</a>Crate features</h2><h3 id="instrumentation"><a class="doc-anchor" href="#instrumentation">§</a><code>instrumentation</code></h3>
+<p><em>(Off by default)</em></p>
+<p>Injects <code>CACHEGRIND_{START|STOP}_INSTRUMENTATION</code> macros allowing for more precise measurements.
+Requires <code>cachegrind</code> 3.22.0+ with dev headers available; see <a href="https://crates.io/crates/crabgrind"><code>crabgrind</code> docs</a>
+for details.</p>
+<h2 id="examples"><a class="doc-anchor" href="#examples">§</a>Examples</h2>
+<p>The entrypoint for defining benchmarks is <a href="struct.Bencher.html" title="struct yab::Bencher"><code>Bencher</code></a>.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>yab::{black_box, Bencher, BenchmarkId};
+
+<span class="doccomment">/// Suppose we want to benchmark this function
+</span><span class="kw">fn </span>fibonacci(n: u64) -&gt; u64 {
+    <span class="kw">match </span>n {
+        <span class="number">0 </span>| <span class="number">1 </span>=&gt; <span class="number">1</span>,
+        n =&gt; fibonacci(n - <span class="number">1</span>) + fibonacci(n - <span class="number">2</span>),
+    }
+}
+
+<span class="kw">fn </span>benchmarks(bencher: <span class="kw-2">&amp;mut </span>Bencher) {
+    <span class="comment">// Benchmark simple functions.
+    </span>bencher
+        .bench(<span class="string">"fib_short"</span>, || fibonacci(black_box(<span class="number">10</span>)))
+        .bench(<span class="string">"fib_long"</span>, || fibonacci(black_box(<span class="number">30</span>)));
+    <span class="comment">// It's possible to benchmark parametric functions as well:
+    </span><span class="kw">for </span>n <span class="kw">in </span>[<span class="number">15</span>, <span class="number">20</span>, <span class="number">25</span>] {
+        bencher.bench(
+            BenchmarkId::new(<span class="string">"fib"</span>, n),
+            || fibonacci(black_box(n)),
+        );
+    }
+    <span class="comment">// To account for setup and/or teardown, you may use `bench_with_capture`
+    </span>bencher.bench_with_capture(<span class="string">"fib_capture"</span>, |capture| {
+        <span class="comment">// This will not be included into captured stats.
+        </span>black_box(fibonacci(black_box(<span class="number">30</span>)));
+        <span class="comment">// This will be the only captured segment.
+        </span><span class="kw">let </span>output = capture.measure(|| fibonacci(black_box(<span class="number">10</span>)));
+        <span class="comment">// This assertion won't be captured either
+        </span><span class="macro">assert_eq!</span>(output, <span class="number">55</span>);
+    });
+}
+
+<span class="macro">yab::main!</span>(benchmarks);</code></pre></div></div></details><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><dl class="item-table"><dt><a class="mod" href="reporter/index.html" title="mod yab::reporter">reporter</a></dt><dd>Benchmark reporting.</dd></dl><h2 id="macros" class="section-header">Macros<a href="#macros" class="anchor">§</a></h2><dl class="item-table"><dt><a class="macro" href="macro.captures.html" title="macro yab::captures">captures</a></dt><dd>Wrapper for a closure that allows to pass it to <a href="struct.Bencher.html#method.bench_with_captures" title="method yab::Bencher::bench_with_captures"><code>Bencher::bench_with_captures()</code></a>.</dd><dt><a class="macro" href="macro.main.html" title="macro yab::main">main</a></dt><dd>Wraps a provided function to create the entrypoint for a benchmark executable. The function
+must have <code>fn(&amp;mut</code> <a href="struct.Bencher.html" title="struct yab::Bencher"><code>Bencher</code></a><code>)</code> signature.</dd></dl><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.AccessSummary.html" title="struct yab::AccessSummary">Access<wbr>Summary</a></dt><dd>High-level memory access stats summarized from <a href="enum.CachegrindStats.html" title="enum yab::CachegrindStats"><code>CachegrindStats</code></a>.</dd><dt><a class="struct" href="struct.Bencher.html" title="struct yab::Bencher">Bencher</a></dt><dd>Benchmarking manager providing ability to define and run benchmarks.</dd><dt><a class="struct" href="struct.BenchmarkId.html" title="struct yab::BenchmarkId">Benchmark<wbr>Id</a></dt><dd>Benchmark identifier supplied to <a href="struct.Bencher.html" title="struct yab::Bencher"><code>Bencher</code></a> functions.</dd><dt><a class="struct" href="struct.CachegrindDataPoint.html" title="struct yab::CachegrindDataPoint">Cachegrind<wbr>Data<wbr>Point</a></dt><dd>Information about a particular type of operations (instruction reads, data reads / writes).</dd><dt><a class="struct" href="struct.CachegrindFunction.html" title="struct yab::CachegrindFunction">Cachegrind<wbr>Function</a></dt><dd>Function associated with captured cachegrind stats.</dd><dt><a class="struct" href="struct.CachegrindOutput.html" title="struct yab::CachegrindOutput">Cachegrind<wbr>Output</a></dt><dd>Parsed output of a <code>cachegrind</code> invocation.</dd><dt><a class="struct" href="struct.Capture.html" title="struct yab::Capture">Capture</a></dt><dd>Manager of capturing benchmarking stats provided to closures in
+<a href="struct.Bencher.html#method.bench_with_capture" title="method yab::Bencher::bench_with_capture"><code>Bencher::bench_with_capture()</code></a>.</dd><dt><a class="struct" href="struct.CaptureGuard.html" title="struct yab::CaptureGuard">Capture<wbr>Guard</a></dt><dd>Guard returned by <a href="struct.Capture.html#method.start" title="method yab::Capture::start"><code>Capture::start()</code></a>. When it is dropped, capturing stops.</dd><dt><a class="struct" href="struct.FullCachegrindStats.html" title="struct yab::FullCachegrindStats">Full<wbr>Cachegrind<wbr>Stats</a></dt><dd>Full <code>cachegrind</code> stats including cache simulation.</dd></dl><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.BenchMode.html" title="enum yab::BenchMode">Bench<wbr>Mode</a></dt><dd>Mode in which the bencher is currently executing.</dd><dt><a class="enum" href="enum.CachegrindStats.html" title="enum yab::CachegrindStats">Cachegrind<wbr>Stats</a></dt><dd>Raw summary output produced by <code>cachegrind</code>.</dd></dl><h2 id="functions" class="section-header">Functions<a href="#functions" class="anchor">§</a></h2><dl class="item-table"><dt><a class="fn" href="fn.black_box.html" title="fn yab::black_box">black_<wbr>box</a></dt><dd>An identity function that <em><strong>hints</strong></em> to the compiler to be maximally pessimistic about what
+<code>black_box</code> could do.</dd></dl></section></div></main></body></html>
