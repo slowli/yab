@@ -412,6 +412,51 @@ fn printing_benchmark_results() {
 }
 
 #[test]
+fn filtering_by_capture() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let target_path = temp_dir.path().join("target");
+    let output = Command::new(EXE_PATH)
+        .args(["--bench", "-q", "--print=pub:main", "/(gen|sum)"])
+        .env("CACHEGRIND_OUT_DIR", &target_path)
+        .output()
+        .expect("failed running benches");
+    assert!(output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let benchmark_names: HashSet<_> = stderr
+        .lines()
+        .filter_map(|line| line.strip_prefix("[√] ")?.split_whitespace().next())
+        .collect();
+    assert_eq!(
+        benchmark_names,
+        HashSet::from([
+            "overlapping_captures/gen_in_loop",
+            "overlapping_captures/gen_array",
+            "hash_set/sum",
+        ])
+    );
+}
+
+#[test]
+fn using_exact_match_with_capture() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let target_path = temp_dir.path().join("target");
+    let output = Command::new(EXE_PATH)
+        .args(["--bench", "--print=pub:main", "--exact", "hash_set/sum"])
+        .env("CACHEGRIND_OUT_DIR", &target_path)
+        .output()
+        .expect("failed running benches");
+    assert!(output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let benchmark_names: HashSet<_> = stderr
+        .lines()
+        .filter_map(|line| line.strip_prefix("[√] ")?.split_whitespace().next())
+        .collect();
+    assert_eq!(benchmark_names, HashSet::from(["hash_set/sum"]));
+}
+
+#[test]
 fn using_custom_job_count() {
     let temp_dir = tempfile::TempDir::new().unwrap();
     let out_path = temp_dir.path().join("out.json");

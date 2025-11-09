@@ -166,7 +166,20 @@ impl MainBencher {
         capture_names: &[&'static str],
         mut bench_fn: impl FnMut(Vec<Capture>),
     ) {
-        if !self.id_matcher.matches(id) {
+        let matches = capture_names.iter().enumerate().filter_map(|(idx, name)| {
+            let matched_id = if name.is_empty() {
+                id.clone()
+            } else {
+                let mut concatenated_id = id.clone();
+                concatenated_id.capture = Some(name);
+                concatenated_id
+            };
+            self.id_matcher
+                .matches(&matched_id)
+                .then_some((idx, matched_id))
+        });
+        let matches: Vec<_> = matches.collect();
+        if matches.is_empty() {
             return;
         }
 
@@ -194,25 +207,17 @@ impl MainBencher {
                 jobs,
                 this_executable,
             } => {
-                let executors =
-                    capture_names
-                        .iter()
-                        .enumerate()
-                        .map(|(active_capture, &capture_name)| {
-                            let mut id = id.clone();
-                            if !capture_name.is_empty() {
-                                id.capture = Some(capture_name);
-                            }
-                            CachegrindRunner {
-                                options: self.options.clone(),
-                                this_executable: this_executable.to_owned(),
-                                reporter: self.reporter.new_benchmark(&id),
-                                logger: self.reporter.logger.clone().for_benchmark(&id),
-                                id,
-                                active_capture,
-                                baseline: self.baseline.clone(),
-                            }
-                        });
+                let executors = matches
+                    .into_iter()
+                    .map(|(active_capture, id)| CachegrindRunner {
+                        options: self.options.clone(),
+                        this_executable: this_executable.to_owned(),
+                        reporter: self.reporter.new_benchmark(&id),
+                        logger: self.reporter.logger.clone().for_benchmark(&id),
+                        id,
+                        active_capture,
+                        baseline: self.baseline.clone(),
+                    });
 
                 if jobs_semaphore.capacity() == 1 {
                     // Run the executors synchronously in order to have deterministic ordering
@@ -233,11 +238,7 @@ impl MainBencher {
                 PrintingReporter::report_list_item(id);
             }
             BenchModeData::PrintResults { current } => {
-                for (active_capture, &capture_name) in capture_names.iter().enumerate() {
-                    let mut id = id.clone();
-                    if !capture_name.is_empty() {
-                        id.capture = Some(capture_name);
-                    }
+                for (active_capture, id) in matches {
                     let executor = CachegrindRunner {
                         options: self.options.clone(),
                         reporter: self.reporter.new_benchmark(&id),
