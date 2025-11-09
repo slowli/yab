@@ -40,7 +40,7 @@ jobs:
       - name: Build libraries
         run: cargo build -p yab
       - name: Run benchmarks (no features)
-        run: cargo bench --workspace
+        run: cargo bench --bench all -- --verbose --vs pub:main --threshold 2%
       - name: Run tests (no features)
         run: cargo test --release --workspace --all-targets
         env:
@@ -89,9 +89,9 @@ jobs:
         run: cargo deny --workspace --all-features check
 
       - name: Run benchmarks
-        run: cargo bench --workspace --all-features
+        run: cargo bench --all-features --bench all -- --verbose --vs pub:main --threshold 2%
       - name: Run benchmarks (no features)
-        run: cargo bench --workspace
+        run: cargo bench --bench all -- --verbose --vs pub:main --threshold 2%
 
       - name: Run tests
         # Running end-to-end tests in the release mode makes it closer to a real environment
