@@ -117,16 +117,16 @@ impl Drop for MainBencher {
 
 impl MainBencher {
     fn new(options: BenchOptions) -> Self {
-        let mut printer =
+        let printer =
             PrintingReporter::new(options.styling(), options.verbosity(), options.breakdown);
         let logger = Arc::new(printer.to_logger());
 
-        options.report(&mut printer);
+        options.report(logger.as_ref());
         let mode = BenchModeData::new(&options);
         if matches!(mode, BenchModeData::Bench { .. }) {
             match cachegrind::check() {
                 Ok(version) => {
-                    printer.report_debug(format_args!("Using cachegrind with version {version}"));
+                    logger.debug(&format_args!("Using cachegrind with version {version}"));
                 }
                 Err(err) => {
                     logger.fatal(&err);
@@ -324,6 +324,10 @@ impl CachegrindRunner {
         let estimated_iterations =
             self.options.warm_up_instructions / output.summary.total_instructions();
         let estimated_iterations = estimated_iterations.clamp(1, self.options.max_iterations);
+        self.logger.debug(&format_args!(
+            "Estimated warm-up iterations: {estimated_iterations}"
+        ));
+
         let baseline = if estimated_iterations == 1 {
             output
         } else {
@@ -426,6 +430,7 @@ impl CachegrindRunner {
     }
 
     fn load_baseline(logger: &dyn Logger, path: &Path) -> Baseline {
+        logger.debug(&format_args!("Loading baseline from {}", path.display()));
         match Self::load_baseline_inner(path) {
             Ok(baseline) => baseline,
             Err(err) => {
