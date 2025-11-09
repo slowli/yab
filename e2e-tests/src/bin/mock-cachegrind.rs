@@ -53,10 +53,7 @@ const ITER_OVERHEAD: FullCachegrindStats = FullCachegrindStats {
 
 const CAPTURES: &[(&str, &[&str])] = &[
     ("hash_set", &["collect", "sum", "drain"]),
-    (
-        "overlapping_captures",
-        &["outer", "gen_in_loop", "gen_array"],
-    ),
+    ("rng/10000", &["outer", "gen_in_loop", "gen_array"]),
 ];
 
 type Baseline = HashMap<String, CachegrindOutput>;

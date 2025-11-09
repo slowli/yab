@@ -94,7 +94,7 @@
       }
     }
   },
-  "overlapping_captures/gen_array": {
+  "rng/10000/gen_array": {
     "summary": {
       "instructions": {
         "total": 215025,
@@ -132,7 +132,7 @@
       }
     }
   },
-  "overlapping_captures/gen_in_loop": {
+  "rng/10000/gen_in_loop": {
     "summary": {
       "instructions": {
         "total": 140016,
@@ -170,7 +170,7 @@
       }
     }
   },
-  "overlapping_captures/outer": {
+  "rng/10000/outer": {
     "summary": {
       "instructions": {
         "total": 355075,

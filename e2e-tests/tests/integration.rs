@@ -430,8 +430,8 @@ fn filtering_by_capture() {
     assert_eq!(
         benchmark_names,
         HashSet::from([
-            "overlapping_captures/gen_in_loop",
-            "overlapping_captures/gen_array",
+            "rng/10000/gen_in_loop",
+            "rng/10000/gen_array",
             "hash_set/sum",
         ])
     );

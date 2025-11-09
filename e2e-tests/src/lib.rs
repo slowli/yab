@@ -31,6 +31,23 @@ fn fibonacci(n: u64) -> u64 {
     }
 }
 
+fn bench_rng<const LEN: usize>(bencher: &mut Bencher) {
+    bencher.bench_with_captures(
+        BenchmarkId::new("rng", LEN),
+        captures!(|[outer, gen_in_loop, gen_array]| {
+            let mut rng = SmallRng::seed_from_u64(RNG_SEED);
+            outer.measure(|| {
+                gen_in_loop.measure(|| {
+                    for _ in 0..LEN {
+                        black_box(rng.random::<u64>());
+                    }
+                });
+                gen_array.measure(|| rng.random::<[u64; LEN]>());
+            });
+        }),
+    );
+}
+
 struct FibGuard(u64);
 
 impl Drop for FibGuard {
@@ -103,18 +120,5 @@ pub fn main(bencher: &mut Bencher) {
         }),
     );
 
-    bencher.bench_with_captures(
-        "overlapping_captures",
-        captures!(|[outer, gen_in_loop, gen_array]| {
-            let mut rng = SmallRng::seed_from_u64(RNG_SEED);
-            outer.measure(|| {
-                gen_in_loop.measure(|| {
-                    for _ in 0..10_000 {
-                        black_box(rng.random::<u64>());
-                    }
-                });
-                gen_array.measure(|| rng.random::<[u64; 10_000]>());
-            });
-        }),
-    );
+    bench_rng::<10_000>(bencher);
 }
