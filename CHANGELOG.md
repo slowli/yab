@@ -8,12 +8,13 @@ The project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html)
 ### Added
 
 - Support saving / loading named baselines similarly to `criterion`.
+- Support multiple captures in a single benchmark.
 
 ### Changed
 
 - Use regular expressions to match benchmark IDs.
 - Bump minimum supported Rust version to 1.85.
-- Rework reporter traits by extracting logger functionality to a separate trait.
+- Rework reporter traits by extracting logging functionality to a separate trait.
 
 ### Fixed
 
