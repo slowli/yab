@@ -207,7 +207,7 @@ fn breakdown() {
     config.with_template(Template::new(template_options)).test(
         lib_snapshot("breakdown"),
         [UserInput::command(
-            "cargo bench --bench all -- --quiet --breakdown collect/hash_set",
+            "cargo bench --bench all -- --quiet --breakdown hash_set/collect",
         )],
     );
 }

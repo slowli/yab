@@ -65,19 +65,19 @@
         <foreignObject width="720" height="352">
           <div xmlns="http://www.w3.org/1999/xhtml" class="container">
             <div class="input" data-exit-status="0"><pre><span class="prompt">$</span> cargo bench --bench all -- fib/</pre></div>
-            <div class="output"><pre>[<span class="bold fg10">√</span>] fib/15<span class="dimmed"> (10ms)</span>
+            <div class="output"><pre>[<span class="bold fg10">√</span>] fib<span class="fg3">/15</span><span class="dimmed"> (10ms)</span>
 ├ Instructions             19228
 ├ L1 hits                  26150
 ├ L2/L3 hits                   0
 ├ RAM accesses                 0
 └ Est. cycles              26150
-[<span class="bold fg10">√</span>] fib/20<span class="dimmed"> (10ms)</span>
+[<span class="bold fg10">√</span>] fib<span class="fg3">/20</span><span class="dimmed"> (10ms)</span>
 ├ Instructions            213151
 ├ L1 hits                 289786
 ├ L2/L3 hits                   0
 ├ RAM accesses                 0
 └ Est. cycles             289786
-[<span class="bold fg10">√</span>] fib/25<span class="dimmed"> (10ms)</span>
+[<span class="bold fg10">√</span>] fib<span class="fg3">/25</span><span class="dimmed"> (10ms)</span>
 ├ Instructions           2363790
 ├ L1 hits                3213554
 ├ L2/L3 hits                   0
