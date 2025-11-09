@@ -146,6 +146,8 @@ pub use crate::{
     id::BenchmarkId,
 };
 
+#[macro_use]
+mod macros;
 mod bencher;
 mod cachegrind;
 mod id;

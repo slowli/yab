@@ -13,7 +13,7 @@ use std::{
 };
 
 use rand::{rngs::SmallRng, Rng, SeedableRng};
-use yab::{black_box, Bencher, BenchmarkId};
+use yab::{black_box, captures, Bencher, BenchmarkId};
 
 use crate::exporter::BenchmarkExporter;
 pub use crate::exporter::EXPORTER_OUTPUT_VAR;
@@ -29,6 +29,23 @@ fn fibonacci(n: u64) -> u64 {
         0 | 1 => 1,
         n => fibonacci(n - 1) + fibonacci(n - 2),
     }
+}
+
+fn bench_rng<const LEN: usize>(bencher: &mut Bencher) {
+    bencher.bench_with_captures(
+        BenchmarkId::new("rng", LEN),
+        captures!(|[outer, gen_in_loop, gen_array]| {
+            let mut rng = SmallRng::seed_from_u64(RNG_SEED);
+            outer.measure(|| {
+                gen_in_loop.measure(|| {
+                    for _ in 0..LEN {
+                        black_box(rng.random::<u64>());
+                    }
+                });
+                gen_array.measure(|| rng.random::<[u64; LEN]>());
+            });
+        }),
+    );
 }
 
 struct FibGuard(u64);
@@ -87,11 +104,21 @@ pub fn main(bencher: &mut Bencher) {
         });
     }
 
-    let mut rng = SmallRng::seed_from_u64(RNG_SEED);
-    bencher.bench("collect/hash_set", || {
-        // Use a deterministic (zero) seed for the hasher to get reproducible results
-        (0..10_000)
-            .map(|_| rng.random())
-            .collect::<HashSet<u64, ZeroHasher>>()
-    });
+    bencher.bench_with_captures(
+        "hash_set",
+        captures!(|[collect, sum, drain]| {
+            // Use a deterministic (zero) seed for the hasher to get reproducible results.
+            let mut rng = SmallRng::seed_from_u64(RNG_SEED);
+            let set: HashSet<u64, ZeroHasher> =
+                collect.measure(|| (0..10_000).map(|_| rng.random()).collect());
+            sum.measure(|| set.iter().copied().reduce(u64::wrapping_add));
+            drain.measure(|| {
+                for item in set {
+                    black_box(item);
+                }
+            });
+        }),
+    );
+
+    bench_rng::<10_000>(bencher);
 }

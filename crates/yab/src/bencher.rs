@@ -4,7 +4,7 @@ use std::{
     collections::HashMap,
     env, fmt, fs,
     io::BufReader,
-    mem, panic,
+    iter, mem, panic,
     path::Path,
     sync::{Arc, OnceLock},
     thread,
@@ -160,24 +160,45 @@ impl MainBencher {
         }
     }
 
-    fn bench<T>(&mut self, id: BenchmarkId, mut bench_fn: impl FnMut(Capture) -> T) {
-        if !self.id_matcher.matches(&id) {
+    fn bench(
+        &mut self,
+        id: &BenchmarkId,
+        capture_names: &[&'static str],
+        mut bench_fn: impl FnMut(Vec<Capture>),
+    ) {
+        let matches = capture_names.iter().enumerate().filter_map(|(idx, name)| {
+            let matched_id = if name.is_empty() {
+                id.clone()
+            } else {
+                let mut concatenated_id = id.clone();
+                concatenated_id.capture = Some(name);
+                concatenated_id
+            };
+            self.id_matcher
+                .matches(&matched_id)
+                .then_some((idx, matched_id))
+        });
+        let matches: Vec<_> = matches.collect();
+        if matches.is_empty() {
             return;
         }
 
         match &mut self.mode {
             BenchModeData::Test { should_fail } => {
-                let test_reporter = self.reporter.new_test(&id);
+                let test_reporter = self.reporter.new_test(id);
+                let captures: Vec<_> = iter::repeat_with(Capture::no_op)
+                    .take(capture_names.len())
+                    .collect();
                 // Run the function once w/o instrumentation.
                 if cfg!(panic = "unwind") {
-                    let wrapped = panic::AssertUnwindSafe(move || drop(bench_fn(Capture::no_op())));
+                    let wrapped = panic::AssertUnwindSafe(move || bench_fn(captures));
                     if let Err(err) = panic::catch_unwind(wrapped) {
                         test_reporter.fail(&err);
                         *should_fail = true;
                         return;
                     }
                 } else {
-                    bench_fn(Capture::no_op());
+                    bench_fn(captures);
                 }
                 test_reporter.ok();
             }
@@ -186,40 +207,50 @@ impl MainBencher {
                 jobs,
                 this_executable,
             } => {
-                let executor = CachegrindRunner {
-                    options: self.options.clone(),
-                    this_executable: this_executable.to_owned(),
-                    reporter: self.reporter.new_benchmark(&id),
-                    logger: self.reporter.logger.clone().for_benchmark(&id),
-                    id,
-                    baseline: self.baseline.clone(),
-                };
+                let executors = matches
+                    .into_iter()
+                    .map(|(active_capture, id)| CachegrindRunner {
+                        options: self.options.clone(),
+                        this_executable: this_executable.to_owned(),
+                        reporter: self.reporter.new_benchmark(&id),
+                        logger: self.reporter.logger.clone().for_benchmark(&id),
+                        id,
+                        active_capture,
+                        baseline: self.baseline.clone(),
+                    });
 
                 if jobs_semaphore.capacity() == 1 {
-                    // Run the executor synchronously in order to have deterministic ordering
-                    executor.run_benchmark();
-                } else {
-                    let jobs_semaphore = jobs_semaphore.clone();
-                    jobs.push(thread::spawn(move || {
-                        let _permit = jobs_semaphore.acquire_owned();
+                    // Run the executors synchronously in order to have deterministic ordering
+                    for executor in executors {
                         executor.run_benchmark();
+                    }
+                } else {
+                    jobs.extend(executors.map(|executor| {
+                        let jobs_semaphore = jobs_semaphore.clone();
+                        thread::spawn(move || {
+                            let _permit = jobs_semaphore.acquire_owned();
+                            executor.run_benchmark();
+                        })
                     }));
                 }
             }
             BenchModeData::List => {
-                PrintingReporter::report_list_item(&id);
+                PrintingReporter::report_list_item(id);
             }
             BenchModeData::PrintResults { current } => {
-                let executor = CachegrindRunner {
-                    options: self.options.clone(),
-                    reporter: self.reporter.new_benchmark(&id),
-                    logger: self.reporter.logger.clone().for_benchmark(&id),
-                    // `this_executable` isn't used, so it's fine to set it to an empty string
-                    this_executable: String::new(),
-                    id,
-                    baseline: self.baseline.clone(),
-                };
-                executor.report_benchmark_result(current);
+                for (active_capture, id) in matches {
+                    let executor = CachegrindRunner {
+                        options: self.options.clone(),
+                        reporter: self.reporter.new_benchmark(&id),
+                        logger: self.reporter.logger.clone().for_benchmark(&id),
+                        // `this_executable` isn't used, so it's fine to set it to an empty string
+                        this_executable: String::new(),
+                        id,
+                        active_capture,
+                        baseline: self.baseline.clone(),
+                    };
+                    executor.report_benchmark_result(current);
+                }
             }
         }
     }
@@ -233,6 +264,7 @@ struct CachegrindRunner {
     reporter: Box<dyn BenchmarkReporter>,
     logger: Arc<dyn Logger>,
     id: BenchmarkId,
+    active_capture: usize,
     baseline: Arc<OnceLock<Baseline>>,
 }
 
@@ -282,6 +314,7 @@ impl CachegrindRunner {
             out_path: &baseline_path,
             this_executable: &self.this_executable,
             id: &self.id,
+            active_capture: self.active_capture,
             iterations: 2,
             is_baseline: true,
         });
@@ -301,6 +334,7 @@ impl CachegrindRunner {
                 out_path: &baseline_path,
                 this_executable: &self.this_executable,
                 id: &self.id,
+                active_capture: self.active_capture,
                 iterations: estimated_iterations + 1,
                 is_baseline: true,
             });
@@ -314,6 +348,7 @@ impl CachegrindRunner {
             out_path: &full_path,
             this_executable: &self.this_executable,
             id: &self.id,
+            active_capture: self.active_capture,
             iterations: estimated_iterations + 1,
             is_baseline: false,
         });
@@ -475,12 +510,13 @@ impl Bencher {
 
     /// Benchmarks a single function. Dropping the output won't be included into the captured stats.
     #[track_caller]
+    #[inline]
     pub fn bench<T>(
         &mut self,
         id: impl Into<BenchmarkId>,
         mut bench_fn: impl FnMut() -> T,
     ) -> &mut Self {
-        self.bench_inner(id.into(), move |capture| {
+        self.bench_inner(&id.into(), &[""], move |[capture]| {
             capture.measure(&mut bench_fn); // dropping the output is not included into capture
         });
         self
@@ -489,25 +525,61 @@ impl Bencher {
     /// Benchmarks a function with configurable capture interval. This allows set up before starting the capture
     /// and/or post-processing (e.g., assertions) after the capture.
     #[track_caller]
+    #[inline]
     pub fn bench_with_capture(
         &mut self,
         id: impl Into<BenchmarkId>,
-        bench_fn: impl FnMut(Capture),
+        mut bench_fn: impl FnMut(Capture),
     ) -> &mut Self {
-        self.bench_inner(id.into(), bench_fn);
+        self.bench_inner(&id.into(), &[""], move |[capture]| {
+            bench_fn(capture);
+        });
         self
     }
 
-    fn bench_inner(&mut self, id: BenchmarkId, bench_fn: impl FnMut(Capture)) {
+    /// Same as [`Self::bench_with_capture()`], but supports multiple captures. This allows naturally sharing
+    /// logic among related benchmarks (as an example, creating data and then consuming it).
+    ///
+    /// Note that there is no requirement that captures are disjoint; indeed, they may overlap, and it's useful for some use cases
+    /// (e.g., to measure a high-level operation *and* its breakdown).
+    ///
+    /// # Arguments
+    ///
+    /// Use the [`captures!`](crate::captures!) macro to idiomatically create the second argument.
+    #[track_caller]
+    #[inline]
+    pub fn bench_with_captures<const N: usize>(
+        &mut self,
+        id: impl Into<BenchmarkId>,
+        (capture_names, bench_fn): ([&'static str; N], impl FnMut([Capture; N])),
+    ) -> &mut Self {
+        self.bench_inner(&id.into(), &capture_names, bench_fn);
+        self
+    }
+
+    fn bench_inner<const N: usize>(
+        &mut self,
+        id: &BenchmarkId,
+        capture_names: &[&'static str],
+        mut bench_fn: impl FnMut([Capture; N]),
+    ) {
         match &mut self.inner {
             BencherInner::Main(bencher) => {
-                bencher.bench(id, bench_fn);
+                bencher.bench(id, capture_names, move |captures| {
+                    let captures: [Capture; N] = captures.try_into().unwrap();
+                    bench_fn(captures);
+                });
             }
             BencherInner::Cachegrind(options) => {
-                if id != options.id.as_str() {
+                if *id != options.id.as_str() {
                     return;
                 }
-                cachegrind::run_instrumented(bench_fn, options.iterations, options.is_baseline);
+                cachegrind::run_instrumented(
+                    bench_fn,
+                    options.iterations,
+                    options.is_baseline,
+                    options.active_capture,
+                );
             }
         }
     }

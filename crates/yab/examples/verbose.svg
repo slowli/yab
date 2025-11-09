@@ -65,7 +65,7 @@
         <foreignObject width="720" height="422">
           <div xmlns="http://www.w3.org/1999/xhtml" class="container">
             <div class="input" data-exit-status="0"><pre><span class="prompt">$</span> cargo bench --bench all -- --quiet random_walk/10000000</pre></div>
-            <div class="output"><pre>[<span class="bold fg10">√</span>] random_walk/10000000<span class="dimmed"> (10ms)</span>
+            <div class="output"><pre>[<span class="bold fg10">√</span>] random_walk<span class="fg3">/10000000</span><span class="dimmed"> (10ms)</span>
 ├ Instructions           1800019
 └ Est. cycles            3035810
 </pre></div>
@@ -75,9 +75,9 @@
 # after some changes...</pre></div>
             <div class="output"><pre><span class="bold fg15 bg5">DEBUG:</span> Started benchmarking with options: BenchOptions { .. }
 <span class="bold fg15 bg5">DEBUG:</span> Using cachegrind with version valgrind-3.23.0
-[<span class="fg14">*</span>] random_walk/10000000<span class="dimmed"> @ e2e-tests/src/lib.rs:50</span>: started
-[<span class="fg14">*</span>] random_walk/10000000<span class="dimmed"> @ e2e-tests/src/lib.rs:50</span>: captured baseline (1771211 i<b class="hard-br"><br/></b>nstructions)
-[<span class="bold fg10">√</span>] random_walk/10000000<span class="dimmed"> @ e2e-tests/src/lib.rs:50</span><span class="dimmed"> (10ms)</span>
+[<span class="fg14">*</span>] random_walk<span class="fg3">/10000000</span><span class="dimmed"> @ e2e-tests/src/lib.rs:50</span>: started
+[<span class="fg14">*</span>] random_walk<span class="fg3">/10000000</span><span class="dimmed"> @ e2e-tests/src/lib.rs:50</span>: captured baseline (1771211 i<b class="hard-br"><br/></b>nstructions)
+[<span class="bold fg10">√</span>] random_walk<span class="fg3">/10000000</span><span class="dimmed"> @ e2e-tests/src/lib.rs:50</span><span class="dimmed"> (10ms)</span>
 ├ Instructions           1770011<span class="fg10">       -30008 (-1.67%)</span>
 ├ L1 hits                2140042<span class="fg10">       -60033 (-2.73%)</span>
 │ ├ Instr.               1770011<span class="fg10">       -30008 (-1.67%)</span>

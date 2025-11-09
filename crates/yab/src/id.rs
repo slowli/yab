@@ -12,6 +12,7 @@ pub struct BenchmarkId {
     pub(crate) name: String,
     pub(crate) location: &'static Location<'static>,
     pub(crate) args: Option<String>, // TODO: is this needed?
+    pub(crate) capture: Option<&'static str>,
 }
 
 impl PartialEq for BenchmarkId {
@@ -44,11 +45,14 @@ impl Hash for BenchmarkId {
 
 impl fmt::Display for BenchmarkId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.name)?;
         if let Some(args) = &self.args {
-            write!(formatter, "{}/{args}", self.name)
-        } else {
-            formatter.write_str(&self.name)
+            write!(formatter, "/{args}")?;
         }
+        if let Some(capture) = self.capture {
+            write!(formatter, "/{capture}")?;
+        }
+        Ok(())
     }
 }
 
@@ -59,6 +63,7 @@ impl<S: Into<String>> From<S> for BenchmarkId {
             name: name.into(),
             location: Location::caller(),
             args: None,
+            capture: None,
         }
     }
 }
@@ -71,6 +76,17 @@ impl BenchmarkId {
             name: name.into(),
             location: Location::caller(),
             args: Some(args.to_string()),
+            capture: None,
+        }
+    }
+
+    pub(crate) fn to_string_without_capture(&self) -> String {
+        if self.capture.is_some() {
+            let mut without_capture = self.clone();
+            without_capture.capture = None;
+            without_capture.to_string()
+        } else {
+            self.to_string()
         }
     }
 }

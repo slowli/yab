@@ -164,12 +164,16 @@ impl<W: io::Write> LinePrinter<W> {
         let BenchmarkId {
             name,
             args,
+            capture,
             location,
         } = id;
 
         self.print(format_args!("{name}"));
         if let Some(args) = args {
-            self.print(format_args!("/{args}"));
+            self.fg(Color::DarkYellow).print(format_args!("/{args}"));
+        }
+        if let Some(capture) = capture {
+            self.fg(Color::DarkCyan).print(format_args!("/{capture}"));
         }
         if print_location {
             self.dimmed()

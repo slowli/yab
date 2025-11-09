@@ -71,13 +71,13 @@
 [<span class="bold fg10">√</span>] fib_long<span class="dimmed"> (10ms)</span>
 ├ Instructions          26214741
 └ Est. cycles           35638636
-[<span class="bold fg10">√</span>] fib/15<span class="dimmed"> (10ms)</span>
+[<span class="bold fg10">√</span>] fib<span class="fg3">/15</span><span class="dimmed"> (10ms)</span>
 ├ Instructions             19228
 └ Est. cycles              26150
-[<span class="bold fg10">√</span>] fib/20<span class="dimmed"> (10ms)</span>
+[<span class="bold fg10">√</span>] fib<span class="fg3">/20</span><span class="dimmed"> (10ms)</span>
 ├ Instructions            213151
 └ Est. cycles             289786
-[<span class="bold fg10">√</span>] fib/25<span class="dimmed"> (10ms)</span>
+[<span class="bold fg10">√</span>] fib<span class="fg3">/25</span><span class="dimmed"> (10ms)</span>
 ├ Instructions           2363790
 └ Est. cycles            3213554
 [<span class="bold fg10">√</span>] fib_capture<span class="dimmed"> (10ms)</span>

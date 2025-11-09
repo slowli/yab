@@ -5,7 +5,9 @@
 
 use std::{
     collections::HashMap,
-    env, fs,
+    env,
+    fmt::Write as _,
+    fs,
     io::{self, Write as _},
     thread,
     time::Duration,
@@ -48,6 +50,11 @@ const ITER_OVERHEAD: FullCachegrindStats = FullCachegrindStats {
         l3_misses: 0,
     },
 };
+
+const CAPTURES: &[(&str, &[&str])] = &[
+    ("hash_set", &["collect", "sum", "drain"]),
+    ("rng/10000", &["outer", "gen_in_loop", "gen_array"]),
+];
 
 type Baseline = HashMap<String, CachegrindOutput>;
 
@@ -118,11 +125,23 @@ fn main() {
         "-" => false,
         _ => panic!("unexpected `is_baseline` option"),
     };
-    let bench_name = &args_to_bench_binary[4];
+    let mut bench_name = args_to_bench_binary[4].clone();
+
+    let maybe_captures = CAPTURES
+        .iter()
+        .copied()
+        .find_map(|(name, captures)| (name == bench_name).then_some(captures));
+    if let Some(captures) = maybe_captures {
+        let capture_idx: usize = args_to_bench_binary[5]
+            .parse()
+            .expect("unexpected capture index");
+        let capture_name = captures[capture_idx];
+        write!(&mut bench_name, "/{capture_name}").unwrap();
+    }
 
     let stats = AllStats::load();
     let bench_stats = *stats
-        .get(bench_name, profile.as_deref())
+        .get(&bench_name, profile.as_deref())
         .summary
         .as_full()
         .unwrap();
@@ -149,7 +168,7 @@ fn main() {
     .unwrap();
 
     if !is_baseline {
-        if let Some(stats) = stats.breakdown.get(bench_name) {
+        if let Some(stats) = stats.breakdown.get(&bench_name) {
             let breakdown = &stats.breakdown;
             let mut functions_by_file = HashMap::<_, Vec<_>>::new();
             for (function, fn_stats) in breakdown {

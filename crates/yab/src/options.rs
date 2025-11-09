@@ -237,6 +237,8 @@ enum CachegrindOptionsError {
     TooFewArgs,
     #[error("failed parsing iterations (must be a positive integer): {0}")]
     Iterations(#[source] num::ParseIntError),
+    #[error("failed parsing active capture (must be a non-negative integer): {0}")]
+    ActiveCapture(#[source] num::ParseIntError),
     #[error("failed parsing baseline flag")]
     IsBaseline,
 }
@@ -246,7 +248,7 @@ pub(crate) struct CachegrindOptions {
     pub iterations: u64,
     pub is_baseline: bool,
     pub id: String,
-    // TODO: consider index?
+    pub active_capture: usize,
 }
 
 impl CachegrindOptions {
@@ -263,6 +265,7 @@ impl CachegrindOptions {
             &self.iterations.to_string(),
             is_baseline,
             &self.id,
+            &self.active_capture.to_string(),
         ]);
     }
 
@@ -285,10 +288,19 @@ impl CachegrindOptions {
             _ => return Err(CachegrindOptionsError::IsBaseline),
         };
         let id = args.next().ok_or(CachegrindOptionsError::TooFewArgs)?;
+
+        let active_capture = if let Some(raw) = args.next() {
+            raw.parse::<usize>()
+                .map_err(CachegrindOptionsError::ActiveCapture)?
+        } else {
+            0
+        };
+
         Ok(Some(Self {
             iterations,
             is_baseline,
             id,
+            active_capture,
         }))
     }
 }

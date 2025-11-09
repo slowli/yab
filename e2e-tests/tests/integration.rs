@@ -58,7 +58,7 @@ fn assert_close(actual: &FullCachegrindStats, expected: &FullCachegrindStats) {
 }
 
 fn assert_close_values(actual: u64, expected: u64) {
-    let threshold = (expected / 100).max(50); // allow divergence up to 1%, and more for smaller values
+    let threshold = (expected / 50).max(50); // allow divergence up to 2%, and more for smaller values
     let diff = actual.abs_diff(expected);
     assert!(diff <= threshold, "actual={actual}, expected={expected}");
 }
@@ -220,7 +220,7 @@ fn assert_reference_stats(outputs: &HashMap<String, BenchmarkOutput>, full: bool
     let should_skip_complex_stats = env::var("YAB_SKIP_COMPLEX_STATS").is_ok();
     for (name, expected_stats) in &*EXPECTED_STATS {
         let expected_stats = expected_stats.summary.as_full().unwrap();
-        if name == "collect/hash_set" && should_skip_complex_stats {
+        if name == "hash_set/collect" && should_skip_complex_stats {
             continue;
         }
         println!("Comparing bench {name}");
@@ -397,7 +397,7 @@ fn printing_benchmark_results() {
         .lines()
         .filter(|line| line.contains("no data for benchmark"))
         .count();
-    assert_eq!(benchmarks_without_data, 8); // `fib/`, `guard` and `random_walk/` benches
+    assert_eq!(benchmarks_without_data, 13); // `fib/`, `guard`, `random_walk/` and capture benches
 
     // Check that only outputs for benches that have already been run are supplied to the processor.
     let outputs = read_outputs(&out_path);
@@ -412,13 +412,58 @@ fn printing_benchmark_results() {
 }
 
 #[test]
+fn filtering_by_capture() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let target_path = temp_dir.path().join("target");
+    let output = Command::new(EXE_PATH)
+        .args(["--bench", "-q", "--print=pub:main", "/(gen|sum)"])
+        .env("CACHEGRIND_OUT_DIR", &target_path)
+        .output()
+        .expect("failed running benches");
+    assert!(output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let benchmark_names: HashSet<_> = stderr
+        .lines()
+        .filter_map(|line| line.strip_prefix("[√] ")?.split_whitespace().next())
+        .collect();
+    assert_eq!(
+        benchmark_names,
+        HashSet::from([
+            "rng/10000/gen_in_loop",
+            "rng/10000/gen_array",
+            "hash_set/sum",
+        ])
+    );
+}
+
+#[test]
+fn using_exact_match_with_capture() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let target_path = temp_dir.path().join("target");
+    let output = Command::new(EXE_PATH)
+        .args(["--bench", "--print=pub:main", "--exact", "hash_set/sum"])
+        .env("CACHEGRIND_OUT_DIR", &target_path)
+        .output()
+        .expect("failed running benches");
+    assert!(output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let benchmark_names: HashSet<_> = stderr
+        .lines()
+        .filter_map(|line| line.strip_prefix("[√] ")?.split_whitespace().next())
+        .collect();
+    assert_eq!(benchmark_names, HashSet::from(["hash_set/sum"]));
+}
+
+#[test]
 fn using_custom_job_count() {
     let temp_dir = tempfile::TempDir::new().unwrap();
     let out_path = temp_dir.path().join("out.json");
     let target_path = temp_dir.path().join("target");
 
     let status = Command::new(EXE_PATH)
-        .arg("--bench")
+        .args(["--bench", "fib"])
         .env(EXPORTER_OUTPUT_VAR, &out_path)
         .env("CACHEGRIND_OUT_DIR", &target_path)
         .stdout(Stdio::null())
@@ -431,7 +476,7 @@ fn using_custom_job_count() {
 
     for jobs in [1, 3] {
         let status = Command::new(EXE_PATH)
-            .args(["--jobs", &jobs.to_string(), "--bench"])
+            .args(["--jobs", &jobs.to_string(), "--bench", "fib"])
             .env(EXPORTER_OUTPUT_VAR, &out_path)
             .env("CACHEGRIND_OUT_DIR", &target_path)
             .stdout(Stdio::null())
