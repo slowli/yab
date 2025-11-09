@@ -148,7 +148,7 @@ pub(crate) struct BenchOptions {
 
 impl BenchOptions {
     pub fn report(&self, logger: &impl Logger) {
-        logger.debug(&format_args!("Started benchmarking with options: {self:?}"));
+        logger.debug(&format_args!("started benchmarking with options: {self:?}"));
     }
 
     pub fn mode(&self) -> BenchMode {

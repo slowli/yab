@@ -126,7 +126,7 @@ impl MainBencher {
         if matches!(mode, BenchModeData::Bench { .. }) {
             match cachegrind::check() {
                 Ok(version) => {
-                    logger.debug(&format_args!("Using cachegrind with version {version}"));
+                    logger.debug(&format_args!("using cachegrind with version {version}"));
                 }
                 Err(err) => {
                     logger.fatal(&err);
@@ -325,7 +325,7 @@ impl CachegrindRunner {
             self.options.warm_up_instructions / output.summary.total_instructions();
         let estimated_iterations = estimated_iterations.clamp(1, self.options.max_iterations);
         self.logger.debug(&format_args!(
-            "Estimated warm-up iterations: {estimated_iterations}"
+            "estimated warm-up iterations: {estimated_iterations}"
         ));
 
         let baseline = if estimated_iterations == 1 {
@@ -430,7 +430,7 @@ impl CachegrindRunner {
     }
 
     fn load_baseline(logger: &dyn Logger, path: &Path) -> Baseline {
-        logger.debug(&format_args!("Loading baseline from {}", path.display()));
+        logger.debug(&format_args!("loading baseline from {}", path.display()));
         match Self::load_baseline_inner(path) {
             Ok(baseline) => baseline,
             Err(err) => {

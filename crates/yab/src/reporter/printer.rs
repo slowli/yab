@@ -127,14 +127,15 @@ impl<W: io::Write> LinePrinter<W> {
     }
 
     fn print_debug(&mut self, id: Option<&BenchmarkId>, args: &dyn fmt::Display) {
-        self.bold()
-            .bg(Color::DarkMagenta)
-            .fg(Color::White)
-            .print_str("DEBUG:");
         if let Some(id) = id {
-            self.print_str(" ");
+            self.print_checkbox(Checkmark::InProgress);
             self.print_id(id, true);
             self.print_str(":");
+        } else {
+            self.bold()
+                .bg(Color::DarkMagenta)
+                .fg(Color::White)
+                .print_str("DEBUG:");
         }
         self.print(format_args!(" {args}\n"));
     }
@@ -536,6 +537,10 @@ struct StandardLogger<W = io::Stderr> {
 
 impl Logger for StandardLogger {
     fn debug(&self, debug_info: &dyn fmt::Display) {
+        if self.reporter.verbosity < Verbosity::Verbose {
+            return;
+        }
+
         self.reporter
             .lock_printer()
             .print_debug(self.id.as_ref(), debug_info);

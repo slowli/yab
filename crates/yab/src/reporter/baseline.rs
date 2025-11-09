@@ -35,7 +35,7 @@ impl Reporter for BaselineSaver {
     fn set_logger(&mut self, logger: &Arc<dyn Logger>) {
         self.logger = logger.clone();
         logger.debug(&format_args!(
-            "Will save baseline to {path} ({has_breakdown} breakdown)",
+            "will save baseline to {path} ({has_breakdown} breakdown)",
             path = self.out_path.display(),
             has_breakdown = if self.breakdown { "with" } else { "no" }
         ));
@@ -76,7 +76,7 @@ impl Reporter for BaselineSaver {
             ));
         });
         self.logger.debug(&format_args!(
-            "Saved baseline to {}",
+            "saved baseline to {}",
             self.out_path.display()
         ));
     }
@@ -128,7 +128,7 @@ impl Reporter for RegressionChecker {
     fn set_logger(&mut self, logger: &Arc<dyn Logger>) {
         self.logger = logger.clone();
         logger.debug(&format_args!(
-            "Checking for regression, threshold={}%",
+            "checking for regression, threshold={}%",
             self.threshold * 100.0
         ));
     }

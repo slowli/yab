@@ -1,5 +1,5 @@
 <!-- Created with term-transcript v0.4.0 (https://github.com/slowli/term-transcript) -->
-<svg viewBox="0 -22 720 464" width="720" height="464" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 -22 720 500" width="720" height="500" xmlns="http://www.w3.org/2000/svg">
   <switch>
     <g requiredExtensions="http://www.w3.org/1999/xhtml">
       <style>
@@ -61,8 +61,8 @@
       <circle cx="17" cy="-9" r="7" style="fill: #ff005b;"/>
       <circle cx="37" cy="-9" r="7" style="fill: #ffe755;"/>
       <circle cx="57" cy="-9" r="7" style="fill: #cee318;"/>
-      <svg x="0" y="10" width="720" height="422" viewBox="0 0 720 422">
-        <foreignObject width="720" height="422">
+      <svg x="0" y="10" width="720" height="458" viewBox="0 0 720 458">
+        <foreignObject width="720" height="458">
           <div xmlns="http://www.w3.org/1999/xhtml" class="container">
             <div class="input" data-exit-status="0"><pre><span class="prompt">$</span> cargo bench --bench all -- --quiet random_walk/10000000</pre></div>
             <div class="output"><pre>[<span class="bold fg10">√</span>] random_walk<span class="fg3">/10000000</span><span class="dimmed"> (10ms)</span>
@@ -73,9 +73,10 @@
             <div class="output"><pre></pre></div>
             <div class="input" data-exit-status="0"><pre><span class="prompt">$</span> cargo bench --bench all -- --verbose random_walk/10000000
 # after some changes...</pre></div>
-            <div class="output"><pre><span class="bold fg15 bg5">DEBUG:</span> Started benchmarking with options: BenchOptions { .. }
-<span class="bold fg15 bg5">DEBUG:</span> Using cachegrind with version valgrind-3.23.0
+            <div class="output"><pre><span class="bold fg15 bg5">DEBUG:</span> started benchmarking with options: BenchOptions { .. }
+<span class="bold fg15 bg5">DEBUG:</span> using cachegrind with version valgrind-3.23.0
 [<span class="fg14">*</span>] random_walk<span class="fg3">/10000000</span><span class="dimmed"> @ e2e-tests/src/lib.rs:50</span>: started
+[<span class="fg14">*</span>] random_walk<span class="fg3">/10000000</span><span class="dimmed"> @ e2e-tests/src/lib.rs:50</span>: estimated warm-up iterations<b class="hard-br"><br/></b>: 1
 [<span class="fg14">*</span>] random_walk<span class="fg3">/10000000</span><span class="dimmed"> @ e2e-tests/src/lib.rs:50</span>: captured baseline (1771211 i<b class="hard-br"><br/></b>nstructions)
 [<span class="bold fg10">√</span>] random_walk<span class="fg3">/10000000</span><span class="dimmed"> @ e2e-tests/src/lib.rs:50</span><span class="dimmed"> (10ms)</span>
 ├ Instructions           1770011<span class="fg10">       -30008 (-1.67%)</span>
