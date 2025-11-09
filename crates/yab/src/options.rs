@@ -15,7 +15,7 @@ use regex::Regex;
 
 use crate::{
     bencher::BenchMode,
-    reporter::{PrintingReporter, Verbosity},
+    reporter::{Logger, Verbosity},
     BenchmarkId,
 };
 
@@ -147,8 +147,8 @@ pub(crate) struct BenchOptions {
 }
 
 impl BenchOptions {
-    pub fn report(&self, reporter: &mut PrintingReporter) {
-        reporter.report_debug(format_args!("Started benchmarking with options: {self:?}"));
+    pub fn report(&self, logger: &impl Logger) {
+        logger.debug(&format_args!("started benchmarking with options: {self:?}"));
     }
 
     pub fn mode(&self) -> BenchMode {

@@ -126,11 +126,17 @@ impl<W: io::Write> LinePrinter<W> {
         self.print_str("] ");
     }
 
-    fn print_debug(&mut self, args: fmt::Arguments<'_>) {
-        self.bold()
-            .bg(Color::DarkMagenta)
-            .fg(Color::White)
-            .print_str("DEBUG:");
+    fn print_debug(&mut self, id: Option<&BenchmarkId>, args: &dyn fmt::Display) {
+        if let Some(id) = id {
+            self.print_checkbox(Checkmark::InProgress);
+            self.print_id(id, true);
+            self.print_str(":");
+        } else {
+            self.bold()
+                .bg(Color::DarkMagenta)
+                .fg(Color::White)
+                .print_str("DEBUG:");
+        }
         self.print(format_args!(" {args}\n"));
     }
 
@@ -310,7 +316,7 @@ impl PrintingReporter {
     }
 
     pub fn to_logger(&self) -> impl Logger {
-        PrintingLogger {
+        StandardLogger {
             reporter: self.clone(),
             id: None,
         }
@@ -320,13 +326,6 @@ impl PrintingReporter {
 impl<W: io::Write> PrintingReporter<W> {
     fn lock_printer(&self) -> impl ops::DerefMut<Target = LinePrinter<W>> + '_ {
         self.line_printer.lock().expect("line printer is poisoned")
-    }
-
-    pub(crate) fn report_debug(&self, args: fmt::Arguments<'_>) {
-        if self.verbosity < Verbosity::Verbose {
-            return;
-        }
-        self.lock_printer().print_debug(args);
     }
 }
 
@@ -531,12 +530,22 @@ where
 }
 
 #[derive(Debug)]
-struct PrintingLogger<W = io::Stderr> {
+struct StandardLogger<W = io::Stderr> {
     reporter: PrintingReporter<W>,
     id: Option<BenchmarkId>,
 }
 
-impl Logger for PrintingLogger {
+impl Logger for StandardLogger {
+    fn debug(&self, debug_info: &dyn fmt::Display) {
+        if self.reporter.verbosity < Verbosity::Verbose {
+            return;
+        }
+
+        self.reporter
+            .lock_printer()
+            .print_debug(self.id.as_ref(), debug_info);
+    }
+
     fn warning(&self, warning: &dyn fmt::Display) {
         self.reporter
             .lock_printer()

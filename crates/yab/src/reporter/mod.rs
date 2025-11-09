@@ -53,6 +53,9 @@ pub trait Reporter: fmt::Debug {
 
 /// Encapsulates logging for a benchmark.
 pub trait Logger: Send + Sync + fmt::Debug {
+    /// Reports debug information.
+    fn debug(&self, debug_info: &dyn fmt::Display);
+
     /// Reports a warning.
     fn warning(&self, warning: &dyn fmt::Display);
 
@@ -65,6 +68,10 @@ pub trait Logger: Send + Sync + fmt::Debug {
 
 /// No-op implementation.
 impl Logger for () {
+    fn debug(&self, _debug_info: &dyn fmt::Display) {
+        // do nothing
+    }
+
     fn warning(&self, _warning: &dyn fmt::Display) {
         // do nothing
     }
