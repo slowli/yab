@@ -6,11 +6,11 @@ use std::{
     env, fs, io,
     path::Path,
     process::{Command, Stdio},
+    sync::LazyLock,
     thread,
     time::Duration,
 };
 
-use once_cell::sync::Lazy;
 use yab::{
     reporter::BenchmarkOutput, AccessSummary, CachegrindOutput, CachegrindStats,
     FullCachegrindStats,
@@ -24,8 +24,9 @@ type Baseline = HashMap<String, CachegrindOutput>;
 
 // Because benchmarked functions are simple, hopefully the snapshot won't depend much on architecture,
 // Rust compiler version etc.
-static EXPECTED_STATS: Lazy<Baseline> =
-    Lazy::new(|| serde_json::from_str(include_str!("../benches/all/main.baseline.json")).unwrap());
+static EXPECTED_STATS: LazyLock<Baseline> = LazyLock::new(|| {
+    serde_json::from_str(include_str!("../benches/all/main.baseline.json")).unwrap()
+});
 
 const EXPECTED_BENCH_NAMES: &[&str] = &[
     "fib_short",
@@ -462,7 +463,7 @@ fn using_custom_job_count() {
     let out_path = temp_dir.path().join("out.json");
     let target_path = temp_dir.path().join("target");
 
-    let status = Command::new(EXE_PATH)
+    let exit_status = Command::new(EXE_PATH)
         .args(["--bench", "fib"])
         .env(EXPORTER_OUTPUT_VAR, &out_path)
         .env("CACHEGRIND_OUT_DIR", &target_path)
@@ -470,12 +471,12 @@ fn using_custom_job_count() {
         .stderr(Stdio::null())
         .status()
         .expect("failed running benches");
-    assert!(status.success());
+    assert!(exit_status.success());
 
     let initial_outputs = read_outputs(&out_path);
 
     for jobs in [1, 3] {
-        let status = Command::new(EXE_PATH)
+        let exit_status = Command::new(EXE_PATH)
             .args(["--jobs", &jobs.to_string(), "--bench", "fib"])
             .env(EXPORTER_OUTPUT_VAR, &out_path)
             .env("CACHEGRIND_OUT_DIR", &target_path)
@@ -483,7 +484,7 @@ fn using_custom_job_count() {
             .stderr(Stdio::null())
             .status()
             .expect("failed running benches");
-        assert!(status.success());
+        assert!(exit_status.success());
 
         let outputs = read_outputs(&out_path);
         for (name, output) in outputs {

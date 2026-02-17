@@ -311,11 +311,11 @@ impl PrintingReporter {
         }
     }
 
-    pub fn report_list_item(id: &BenchmarkId) {
+    pub(crate) fn report_list_item(id: &BenchmarkId) {
         println!("{id}: benchmark");
     }
 
-    pub fn to_logger(&self) -> impl Logger {
+    pub(crate) fn to_logger(&self) -> impl Logger {
         StandardLogger {
             reporter: self.clone(),
             id: None,

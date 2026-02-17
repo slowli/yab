@@ -1,3 +1,5 @@
+//! Checks that crate version mentions are in sync.
+
 use version_sync::{assert_html_root_url_updated, assert_markdown_deps_updated};
 
 #[test]
