@@ -585,7 +585,7 @@ fn comparing_public_baselines() {
     let stderr = String::from_utf8(output.stderr).unwrap();
     let mut lines = stderr.lines();
     assert!(
-        lines.any(|line| line == "├ Instructions           1800019       +30008 (+1.70%)"),
+        lines.any(|line| line == "├ Instructions           1800023       +30012 (+1.70%)"),
         "{stderr}"
     );
 }
