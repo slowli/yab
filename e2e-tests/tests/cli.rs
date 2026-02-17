@@ -11,7 +11,7 @@ use std::{
 use regex::Regex;
 use tempfile::TempDir;
 use term_transcript::{
-    svg::{Template, TemplateOptions},
+    svg::{self, Template, TemplateOptions},
     test::{MatchKind, TestConfig},
     Captured, ShellOptions, StdShell, UserInput,
 };
@@ -119,10 +119,10 @@ fn test_config(sequential: bool) -> (TestConfig<StdShell>, TestLock) {
 
 fn plain_template() -> Template {
     let template_options = TemplateOptions {
-        window_frame: true,
+        window: Some(svg::WindowOptions::default()),
         ..TemplateOptions::default()
     };
-    Template::new(template_options)
+    Template::new(template_options.validated().unwrap())
 }
 
 #[test]
@@ -199,11 +199,13 @@ fn verbose_transcript() {
 fn breakdown() {
     let (config, _lock) = test_config(false);
     let template_options = TemplateOptions {
-        window_frame: true,
-        width: 850,
+        window: Some(svg::WindowOptions::default()),
+        width: 850.try_into().unwrap(),
         wrap: None,
         ..TemplateOptions::default()
     };
+    let template_options = template_options.validated().unwrap();
+
     config.with_template(Template::new(template_options)).test(
         lib_snapshot("breakdown"),
         [UserInput::command(
