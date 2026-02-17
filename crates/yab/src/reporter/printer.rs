@@ -679,19 +679,16 @@ impl<'a> BreakdownList<'a> {
             }
             printer.print_str("  ");
 
-            {
-                let style = instr_change.map_or(Style::new(), |change| {
-                    Self::style_diff(change, DIFF_THRESHOLD)
-                });
-                printer.print(format_args!("{style}"));
-                if let Some(instr_change) = instr_change {
-                    let accuracy = (instr_change.abs() < 100.0).into();
-                    printer.print(format_args!("{instr_change:>+9.accuracy$}%"));
-                } else {
-                    printer.print_str("         -");
-                }
-                printer.print(format_args!("{style:#}"));
+            let style =
+                instr_change.map_or(DIMMED, |change| Self::style_diff(change, DIFF_THRESHOLD));
+            printer.print(format_args!("{style}"));
+            if let Some(instr_change) = instr_change {
+                let accuracy = (instr_change.abs() < 100.0).into();
+                printer.print(format_args!("{instr_change:>+9.accuracy$}%"));
+            } else {
+                printer.print_str("         -");
             }
+            printer.print(format_args!("{style:#}"));
             printer.print_str("  ");
 
             let mut function = function.to_string();
@@ -730,6 +727,8 @@ impl<'a> BreakdownList<'a> {
 mod tests {
     use std::collections::HashMap;
 
+    use styled_str::{styled, StyledString};
+
     use super::*;
     use crate::cachegrind::{CachegrindDataPoint, FullCachegrindStats};
 
@@ -742,10 +741,10 @@ mod tests {
         }
     }
 
-    fn extract_buffer(reporter: PrintingReporter<Vec<u8>>) -> String {
+    fn extract_buffer(reporter: PrintingReporter<Vec<u8>>) -> StyledString {
         let buffer = Arc::into_inner(reporter.line_printer).unwrap();
         let buffer = buffer.into_inner().unwrap().inner;
-        String::from_utf8(buffer).unwrap()
+        StyledString::from_ansi_bytes(&buffer).unwrap()
     }
 
     fn mock_stats() -> FullCachegrindStats {
@@ -803,11 +802,15 @@ mod tests {
         });
 
         let buffer = extract_buffer(reporter);
-        let lines: Vec<_> = buffer.lines().collect();
+        let lines: Vec<_> = buffer.as_str().lines().collect();
         assert_eq!(lines.len(), 2, "{buffer}");
-        assert!(lines[0].starts_with("[√] test ("), "{buffer}");
-        assert!(!lines[0].contains("printer.rs"), "{buffer}");
-        assert_eq!(lines[1], "└ Instructions               123");
+        let first_line = lines[0].to_string();
+        assert!(
+            first_line.starts_with("[[[bold green!]]√[[/]]] test[[dim]] "),
+            "{first_line}"
+        );
+        assert!(!lines[0].text().contains("printer.rs"), "{buffer}");
+        assert_eq!(lines[1], styled!("└ Instructions               123"));
     }
 
     #[test]
@@ -823,12 +826,12 @@ mod tests {
             });
 
         let buffer = extract_buffer(reporter);
-        let lines: Vec<_> = buffer.lines().collect();
+        let lines: Vec<_> = buffer.as_str().lines().collect();
         assert_eq!(lines.len(), 2, "{buffer}");
-        assert_eq!(lines[0], "[√] test");
+        assert_eq!(lines[0], styled!("[[[bold green!]]√[[/]]] test"));
         assert_eq!(
             lines[1],
-            "└ Instructions               120          +20 (+20.00%)"
+            styled!("└ Instructions               120[[red!]]          +20 (+20.00%)")
         );
     }
 
@@ -844,14 +847,14 @@ mod tests {
             });
 
         let buffer = extract_buffer(reporter);
-        let lines: Vec<_> = buffer.lines().collect();
+        let lines: Vec<_> = buffer.as_str().lines().collect();
         assert_eq!(lines.len(), 6, "{buffer}");
-        assert_eq!(lines[0], "[√] test");
-        assert_eq!(lines[1], "├ Instructions               100");
-        assert_eq!(lines[2], "├ L1 hits                    250");
-        assert_eq!(lines[3], "├ L2/L3 hits                  80");
-        assert_eq!(lines[4], "├ RAM accesses                20");
-        assert_eq!(lines[5], "└ Est. cycles               1350");
+        assert_eq!(lines[0], styled!("[[[bold green!]]√[[/]]] test"));
+        assert_eq!(lines[1], styled!("├ Instructions               100"));
+        assert_eq!(lines[2], styled!("├ L1 hits                    250"));
+        assert_eq!(lines[3], styled!("├ L2/L3 hits                  80"));
+        assert_eq!(lines[4], styled!("├ RAM accesses                20"));
+        assert_eq!(lines[5], styled!("└ Est. cycles               1350"));
     }
 
     #[test]
@@ -884,22 +887,30 @@ mod tests {
         let list = BreakdownList::new(&stats, Some(&old_stats), 0.01);
         list.print(&mut reporter.lock_printer());
         let buffer = extract_buffer(reporter);
-        let lines: Vec<_> = buffer.lines().collect();
+        let lines: Vec<_> = buffer.as_str().lines().collect();
         assert_eq!(lines.len(), 6, "{lines:#?}");
-        assert_eq!(lines[0], "    %   % diff  Instr.diff  Function");
-        assert_eq!(lines[1], "90.0%   +6.7pp      -10.0%  yab::test");
+        assert_eq!(
+            lines[0],
+            styled!("[[bold]]    %   % diff  Instr.diff  Function")
+        );
+        assert_eq!(
+            lines[1],
+            styled!("90.0%  [[red!]] +6.7pp[[/]]  [[green!]]    -10.0%[[/]]  yab::test")
+        );
         assert_eq!(
             lines[2],
-            "10.0%  +10.0pp       +inf%  <alloc::sync::Arc<T> as core::default::Default>::default"
+            styled!("10.0%  [[red!]]+10.0pp[[/]]  [[red!]]     +inf%[[/]]  <alloc::sync::Arc<T> as core::default::Default>::default")
         );
         assert_eq!(
             lines[3],
-            " 0.0%  -16.7pp       -100%  <hashbrown::raw::RawTable<T,A> as core::ops::drop::Drop… [1]"
+            styled!(" 0.0%  [[green!]]-16.7pp[[/]]  [[green!]]     -100%[[/]]  <hashbrown::raw::RawTable<T,A> as core::ops::drop::Drop… [[cyan!]][1]")
         );
-        assert_eq!(lines[4], "-----");
+        assert_eq!(lines[4], styled!("[[bold]]-----"));
         assert_eq!(
             lines[5],
-            " [1] <hashbrown::raw::RawTable<T,A> as core::ops::drop::Drop>::drop"
+            styled!(
+                "[[cyan!]] [1][[/]] <hashbrown::raw::RawTable<T,A> as core::ops::drop::Drop>::drop"
+            )
         );
     }
 
@@ -915,23 +926,29 @@ mod tests {
             });
 
         let buffer = extract_buffer(reporter);
-        let lines: Vec<_> = buffer.lines().collect();
+        let lines: Vec<_> = buffer.as_str().lines().collect();
         assert!(lines.len() > 10, "{buffer}");
-        assert!(lines[0].starts_with("[*] test @"), "{buffer}");
-        assert!(lines[0].contains("printer.rs"));
-        assert!(lines[1].starts_with("[√] test @"), "{buffer}");
-        assert_eq!(lines[2], "├ Instructions               100");
-        assert_eq!(lines[3], "├ L1 hits                    250");
-        assert_eq!(lines[4], "│ ├ Instr.                    80");
-        assert_eq!(lines[5], "│ ├ Data reads               160");
-        assert_eq!(lines[6], "│ └ Data writes               10");
+        assert!(lines[0].text().starts_with("[*] test @"), "{buffer}");
+        assert!(lines[0].text().contains("printer.rs"));
+        assert!(lines[1].text().starts_with("[√] test @"), "{buffer}");
+        assert_eq!(lines[2], styled!("├ Instructions               100"));
+        assert_eq!(lines[3], styled!("├ L1 hits                    250"));
+        assert_eq!(lines[4], styled!("│ ├ Instr.                    80"));
+        assert_eq!(lines[5], styled!("│ ├ Data reads               160"));
+        assert_eq!(lines[6], styled!("│ └ Data writes               10"));
 
         let ram_idx = lines
             .iter()
-            .position(|&line| line == "├ RAM accesses                20")
+            .position(|&line| line == styled!("├ RAM accesses                20"))
             .unwrap();
-        assert_eq!(lines[ram_idx + 1], "│ ├ Instr.                    10");
-        assert_eq!(lines[ram_idx + 2], "│ └ Data reads                10");
+        assert_eq!(
+            lines[ram_idx + 1],
+            styled!("│ ├ Instr.                    10")
+        );
+        assert_eq!(
+            lines[ram_idx + 2],
+            styled!("│ └ Data reads                10")
+        );
     }
 
     #[test]
@@ -949,25 +966,25 @@ mod tests {
             });
 
         let buffer = extract_buffer(reporter);
-        let lines: Vec<_> = buffer.lines().collect();
+        let lines: Vec<_> = buffer.as_str().lines().collect();
         assert_eq!(lines.len(), 6, "{buffer}");
-        assert_eq!(lines[0], "[√] test");
+        assert_eq!(lines[0], styled!("[[[bold green!]]√[[/]]] test"));
         assert_eq!(
             lines[1],
-            "├ Instructions               100          -10 (-9.09%)"
+            styled!("├ Instructions               100[[green!]]          -10 (-9.09%)")
         );
         assert_eq!(
             lines[2],
-            "├ L1 hits                    250          -30 (-10.71%)"
+            styled!("├ L1 hits                    250[[green!]]          -30 (-10.71%)")
         );
         assert_eq!(
             lines[3],
-            "├ L2/L3 hits                  80          +20 (+33.33%)"
+            styled!("├ L2/L3 hits                  80[[red!]]          +20 (+33.33%)")
         );
-        assert_eq!(lines[4], "├ RAM accesses                20");
+        assert_eq!(lines[4], styled!("├ RAM accesses                20"));
         assert_eq!(
             lines[5],
-            "└ Est. cycles               1350          +70 (+5.47%)"
+            styled!("└ Est. cycles               1350[[red!]]          +70 (+5.47%)")
         );
     }
 }

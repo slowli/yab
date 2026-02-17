@@ -1,7 +1,6 @@
 //! CLI snapshot tests.
 
 use std::{
-    borrow::Cow,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{Mutex, MutexGuard, Once, PoisonError},
@@ -9,11 +8,12 @@ use std::{
 };
 
 use regex::Regex;
+use styled_str::{StyledStr, StyledString};
 use tempfile::TempDir;
 use term_transcript::{
     svg::{self, Template, TemplateOptions},
     test::{MatchKind, TestConfig},
-    Captured, ShellOptions, StdShell, UserInput,
+    ShellOptions, StdShell, UserInput,
 };
 
 const MOCK_CACHEGRIND_PATH: &str = env!("CARGO_BIN_EXE_mock-cachegrind");
@@ -53,7 +53,7 @@ fn lib_snapshot(name: &str) -> PathBuf {
     snapshot_path
 }
 
-fn transform_output<'a>(output_lines: impl Iterator<Item = &'a str>) -> String {
+fn transform_output<'s>(output_lines: impl Iterator<Item = StyledStr<'s>>) -> StyledString {
     // Normalize unpredictable parts of the benching output: durations, bench options, cachegrind version, and file locations.
     let duration_regex = Regex::new(r"\(\d+(\.\d+)?[num]?s\)").unwrap();
     let options_regex = Regex::new(r"BenchOptions \{.*}").unwrap();
@@ -61,35 +61,40 @@ fn transform_output<'a>(output_lines: impl Iterator<Item = &'a str>) -> String {
     let code_location_regex = Regex::new(r"(?<file>e2e-tests/src/lib\.rs):(?<line>\d+)").unwrap();
 
     let mut should_output_line = false;
-    let mut buffer = String::new();
+    let mut buffer = StyledString::builder();
     for line in output_lines {
-        let mut replaced = Cow::Borrowed(line);
+        let mut replaced = None;
         let current_output_line = should_output_line;
-        if line.contains("Running") && line.contains("benches/all.rs") {
+        if line.text().contains("Running") && line.text().contains("benches/all.rs") {
             should_output_line = true;
         }
-        if line.contains("bench failed, to rerun pass") {
+        if line.text().contains("bench failed, to rerun pass") {
             // Truncate the following "Caused by" diagnostic output containing unpredictable paths etc.
             should_output_line = false;
-
             // Remove styling because it's inconsistent across `cargo` versions.
-            let stripped_line = Captured::from(line.to_owned())
-                .to_plaintext()
-                .expect("unsupported styling");
-            replaced = Cow::Owned(stripped_line);
+            replaced = Some(line.text().to_owned());
         }
         if !current_output_line {
             continue;
         }
 
         // Replace variable segments
+        let replaced = replaced.unwrap_or_else(|| line.ansi().to_string());
         let replaced =
             cachegrind_version_regex.replace(&replaced, "cachegrind with version valgrind-3.23.0");
         let replaced = options_regex.replace(&replaced, "BenchOptions { .. }");
         let replaced = duration_regex.replace(&replaced, "(10ms)");
         let replaced = code_location_regex.replace(&replaced, "$file:50");
-        buffer += &replaced;
-        buffer.push('\n');
+
+        let replaced = StyledString::from_ansi(&replaced).unwrap();
+        buffer.push_str(replaced.as_str());
+        buffer.push_text("\n");
+    }
+
+    // Remove the ending newlines; captured transcripts have them removed.
+    let mut buffer = buffer.build();
+    while buffer.text().ends_with('\n') {
+        buffer.pop();
     }
     buffer
 }
@@ -109,9 +114,8 @@ fn test_config(sequential: bool) -> (TestConfig<StdShell>, TestLock) {
 
     let config: TestConfig<_> = TestConfig::new(shell_options).with_transform(|transcript| {
         for interaction in transcript.interactions_mut() {
-            let output_lines = interaction.output().as_ref().lines();
-            let transformed_output = transform_output(output_lines);
-            interaction.set_output(transformed_output.into());
+            let output_lines = interaction.output().as_str().lines();
+            interaction.set_output(transform_output(output_lines));
         }
     });
     (config.with_match_kind(MatchKind::Precise), lock)
