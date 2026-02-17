@@ -9,7 +9,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-rand = { workspace = true, features = ["small_rng"] }
+rand.workspace = true
 serde_json.workspace = true
 
 yab = { path = "../crates/yab" }

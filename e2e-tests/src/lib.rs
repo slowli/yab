@@ -12,7 +12,7 @@ use std::{
     hash::{BuildHasherDefault, DefaultHasher},
 };
 
-use rand::{rngs::SmallRng, Rng, SeedableRng};
+use rand::{rngs::SmallRng, RngExt, SeedableRng};
 use yab::{black_box, captures, Bencher, BenchmarkId};
 
 use crate::exporter::BenchmarkExporter;

@@ -2,12 +2,12 @@
   "fib/15": {
     "summary": {
       "instructions": {
-        "total": 19228,
+        "total": 19227,
         "l1_misses": 0,
         "l3_misses": 0
       },
       "data_reads": {
-        "total": 2968,
+        "total": 2966,
         "l1_misses": 0,
         "l3_misses": 0
       },
@@ -21,12 +21,12 @@
   "fib/20": {
     "summary": {
       "instructions": {
-        "total": 213151,
+        "total": 213150,
         "l1_misses": 0,
         "l3_misses": 0
       },
       "data_reads": {
-        "total": 32845,
+        "total": 32843,
         "l1_misses": 0,
         "l3_misses": 0
       },
@@ -40,12 +40,12 @@
   "fib/25": {
     "summary": {
       "instructions": {
-        "total": 2363790,
+        "total": 2363789,
         "l1_misses": 0,
         "l3_misses": 0
       },
       "data_reads": {
-        "total": 364186,
+        "total": 364184,
         "l1_misses": 0,
         "l3_misses": 0
       },
@@ -64,7 +64,7 @@
         "l3_misses": 0
       },
       "data_reads": {
-        "total": 274,
+        "total": 272,
         "l1_misses": 0,
         "l3_misses": 0
       },
@@ -83,7 +83,7 @@
         "l3_misses": 0
       },
       "data_reads": {
-        "total": 4038813,
+        "total": 4038811,
         "l1_misses": 0,
         "l3_misses": 0
       },
@@ -102,7 +102,7 @@
         "l3_misses": 0
       },
       "data_reads": {
-        "total": 273,
+        "total": 271,
         "l1_misses": 0,
         "l3_misses": 0
       },
@@ -121,7 +121,7 @@
         "l3_misses": 0
       },
       "data_reads": {
-        "total": 274,
+        "total": 273,
         "l1_misses": 0,
         "l3_misses": 0
       },
@@ -140,7 +140,7 @@
         "l3_misses": 0
       },
       "data_reads": {
-        "total": 274,
+        "total": 273,
         "l1_misses": 0,
         "l3_misses": 0
       },
@@ -155,18 +155,18 @@
     "summary": {
       "instructions": {
         "total": 1542645,
-        "l1_misses": 13,
-        "l3_misses": 13
+        "l1_misses": 15,
+        "l3_misses": 15
       },
       "data_reads": {
-        "total": 110505,
-        "l1_misses": 2685,
+        "total": 110504,
+        "l1_misses": 2744,
         "l3_misses": 3
       },
       "data_writes": {
-        "total": 96484,
-        "l1_misses": 8705,
-        "l3_misses": 2293
+        "total": 96482,
+        "l1_misses": 8720,
+        "l3_misses": 2296
       }
     }
   },
@@ -178,8 +178,8 @@
         "l3_misses": 9
       },
       "data_reads": {
-        "total": 11069,
-        "l1_misses": 2301,
+        "total": 11068,
+        "l1_misses": 2304,
         "l3_misses": 0
       },
       "data_writes": {
@@ -197,7 +197,7 @@
         "l3_misses": 0
       },
       "data_reads": {
-        "total": 11031,
+        "total": 11030,
         "l1_misses": 2232,
         "l3_misses": 0
       },
@@ -211,17 +211,17 @@
   "random_walk/1000000": {
     "summary": {
       "instructions": {
-        "total": 1800019,
+        "total": 1800023,
         "l1_misses": 0,
         "l3_misses": 0
       },
       "data_reads": {
         "total": 300008,
-        "l1_misses": 99564,
+        "l1_misses": 99566,
         "l3_misses": 0
       },
       "data_writes": {
-        "total": 200007,
+        "total": 200008,
         "l1_misses": 0,
         "l3_misses": 0
       }
@@ -230,17 +230,17 @@
   "random_walk/10000000": {
     "summary": {
       "instructions": {
-        "total": 1800019,
+        "total": 1800023,
         "l1_misses": 0,
         "l3_misses": 0
       },
       "data_reads": {
         "total": 300008,
-        "l1_misses": 99959,
-        "l3_misses": 11198
+        "l1_misses": 99960,
+        "l3_misses": 11182
       },
       "data_writes": {
-        "total": 200007,
+        "total": 200008,
         "l1_misses": 0,
         "l3_misses": 0
       }
@@ -249,13 +249,13 @@
   "rng/10000/gen_array": {
     "summary": {
       "instructions": {
-        "total": 215025,
+        "total": 215024,
         "l1_misses": 0,
         "l3_misses": 0
       },
       "data_reads": {
-        "total": 79988,
-        "l1_misses": 1256,
+        "total": 79987,
+        "l1_misses": 1257,
         "l3_misses": 0
       },
       "data_writes": {
@@ -273,7 +273,7 @@
         "l3_misses": 0
       },
       "data_reads": {
-        "total": 5,
+        "total": 4,
         "l1_misses": 0,
         "l3_misses": 0
       },
@@ -287,13 +287,13 @@
   "rng/10000/outer": {
     "summary": {
       "instructions": {
-        "total": 355075,
+        "total": 355074,
         "l1_misses": 0,
         "l3_misses": 0
       },
       "data_reads": {
-        "total": 80005,
-        "l1_misses": 1256,
+        "total": 80004,
+        "l1_misses": 1257,
         "l3_misses": 0
       },
       "data_writes": {

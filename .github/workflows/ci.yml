@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Check that old valgrind versions can be used w/o instrumentation
       - name: Install valgrind
@@ -31,7 +31,7 @@ jobs:
           toolchain: ${{ env.msrv }}
 
       - name: Cache cargo build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: target
           key: ${{ runner.os }}-msrv-cargo-${{ hashFiles('Cargo.lock') }}
@@ -52,10 +52,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Cache valgrind build dir
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /tmp/valgrind-${{ env.valgrind }}
           key: ${{ runner.os }}-valgrind-${{ env.valgrind }}
@@ -68,7 +68,7 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
       - name: Cache cargo build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
@@ -77,7 +77,7 @@ jobs:
         uses: baptiste0928/cargo-install@v3
         with:
           crate: cargo-deny
-          version: "^0.16"
+          version: "^0.18"
 
       - name: Format
         run: cargo fmt --all -- --config imports_granularity=Crate --config group_imports=StdExternalCrate --check
@@ -101,37 +101,63 @@ jobs:
       - name: Run doc tests
         run: cargo test --workspace --all-features --doc
 
-  document:
-    if: github.event_name == 'push'
-    needs:
-      - build
-      - build-msrv
+  build-nightly:
     permissions:
-      contents: write
+      contents: read
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
+      - name: Install valgrind
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-suggests --no-install-recommends valgrind
+          valgrind --tool=cachegrind --version
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.nightly }}
 
       - name: Cache cargo build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: target
-          key: ${{ runner.os }}-document-cargo-${{ hashFiles('Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-document-cargo
+          key: ${{ runner.os }}-nightly-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-nightly-cargo
 
+      - name: Build libraries
+        run: cargo build -p yab
       - name: Build docs
         run: |
-          cargo clean --doc && cargo rustdoc -p yab -- --cfg docsrs
+          cargo clean --doc && cargo rustdoc -p yab -- -D warnings --cfg docsrs
 
-      - name: Deploy
-        uses: JamesIves/github-pages-deploy-action@v4
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v5
+        if: github.event_name == 'push' && github.ref_type == 'branch'
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        if: github.event_name == 'push' && github.ref_type == 'branch'
         with:
-          branch: gh-pages
-          folder: target/doc
-          single-commit: true
+          path: 'target/doc'
+
+  deploy-pages:
+    needs:
+      - build
+      - build-msrv
+      - build-nightly
+    if: github.event_name == 'push' && github.ref_type == 'branch'
+    permissions:
+      pages: write
+      id-token: write
+
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

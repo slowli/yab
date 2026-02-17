@@ -1,12 +1,12 @@
-<!-- Created with term-transcript v0.4.0 (https://github.com/slowli/term-transcript) -->
-<svg viewBox="0 -22 720 338" width="720" height="338" xmlns="http://www.w3.org/2000/svg">
+<!-- Created with term-transcript v0.5.0-beta.1 (https://github.com/slowli/term-transcript) -->
+<svg viewBox="0 -22 720 320" width="720" height="320" xmlns="http://www.w3.org/2000/svg">
   <switch>
     <g requiredExtensions="http://www.w3.org/1999/xhtml">
       <style>
         .container {
           padding: 0 10px;
           color: #e5e5e5;
-          line-height: 18px;
+          line-height: 16.8px;
         }
         .container pre {
           padding: 0;
@@ -22,31 +22,41 @@
         }
         .input-hidden { display: none; }
         .output { margin-bottom: 6px; }
+        .output-sep {
+          margin: -3px -10px 2px;
+          border-top: 1px solid color-mix(in hsl, #e5e5e5 35%, #1c1c1c);
+        }
         .bold,.prompt { font-weight: bold; }
         .italic { font-style: italic; }
-        .underline { text-decoration: underline; }
-        .dimmed { opacity: 0.7; }
-        .hard-br {
-          position: relative;
-          margin-left: 5px;
+        .underline:not(.dimmed, .blink), .underline:is(.dimmed, .blink) > span { text-decoration-line: underline; }
+        .strike:not(.dimmed, .blink), .strike:is(.dimmed, .blink) > span { text-decoration-line: line-through; }
+        .underline.strike:not(.dimmed, .blink), .underline.strike:is(.dimmed, .blink) > span { text-decoration-line: underline line-through; }
+        .dimmed > span { color: color-mix(in hsl, currentColor 70%, transparent); }
+        .dimmed-bg > span { background: rgb(from #1c1c1c r g b / 30%); }
+        .concealed { color: rgba(0, 0, 0, 0) !important; }
+        @keyframes blink {
+          0% { color: currentColor; background: transparent; }
+          100% {
+            color: color-mix(in hsl, currentColor 70%, transparent);
+            background: rgb(from #1c1c1c r g b / 30%);
+          }
         }
+        .blink > span { animation: 2s steps(2, jump-none) 0s infinite blink; }
+        .hard-br { margin-left: 8px; }
         .hard-br:before {
-          content: '↓';
-          font-size: 16px;
-          height: 16px;
-          position: absolute;
-          bottom: 0;
-          transform: rotate(45deg);
-          opacity: 0.8;
+          content: '»';
+          color: color-mix(in hsl, currentColor 60%, #1c1c1c);
         }
-        .fg0 { color: #1c1c1c; } .bg0 { background: #1c1c1c; }
+        .line { display: block; }
+        .line span { display: inline-block; text-decoration-thickness: 1px; }
+        .fg0,.inv.fg-none { color: #1c1c1c; } .bg0 { background: #1c1c1c; }
         .fg1 { color: #ff005b; } .bg1 { background: #ff005b; }
         .fg2 { color: #cee318; } .bg2 { background: #cee318; }
         .fg3 { color: #ffe755; } .bg3 { background: #ffe755; }
         .fg4 { color: #048ac7; } .bg4 { background: #048ac7; }
         .fg5 { color: #833c9f; } .bg5 { background: #833c9f; }
         .fg6 { color: #0ac1cd; } .bg6 { background: #0ac1cd; }
-        .fg7 { color: #e5e5e5; } .bg7 { background: #e5e5e5; }
+        .fg7 { color: #e5e5e5; } .bg7,.inv.bg-none { background: #e5e5e5; }
         .fg8 { color: #666666; } .bg8 { background: #666666; }
         .fg9 { color: #ff00a0; } .bg9 { background: #ff00a0; }
         .fg10 { color: #ccff00; } .bg10 { background: #ccff00; }
@@ -56,38 +66,37 @@
         .fg14 { color: #63e7f0; } .bg14 { background: #63e7f0; }
         .fg15 { color: #f3f3f3; } .bg15 { background: #f3f3f3; }
       </style>
-      <rect width="100%" height="100%" y="-22" rx="4.5" style="fill: #1c1c1c;" />
+      <rect width="100%" height="100%" y="-22" rx="4.5" style="fill: #1c1c1c;"/>
       <rect width="100%" height="26" y="-22" clip-path="inset(0 0 -10 0 round 4.5)" style="fill: #fff; fill-opacity: 0.1;"/>
       <circle cx="17" cy="-9" r="7" style="fill: #ff005b;"/>
       <circle cx="37" cy="-9" r="7" style="fill: #ffe755;"/>
       <circle cx="57" cy="-9" r="7" style="fill: #cee318;"/>
-      <svg x="0" y="10" width="720" height="296" viewBox="0 0 720 296">
-        <foreignObject width="720" height="296">
+
+      <svg x="0" y="10" width="720" height="278" viewBox="0 0 720 278" overflow="hidden">
+        <foreignObject width="720" height="278">
           <div xmlns="http://www.w3.org/1999/xhtml" class="container">
             <div class="input" data-exit-status="0"><pre><span class="prompt">$</span> cargo bench --bench all fib_short</pre></div>
-            <div class="output"><pre>[<span class="bold fg10">√</span>] fib_short<span class="dimmed"> (10ms)</span>
-├ Instructions              1741
-├ L1 hits                   2376
-├ L2/L3 hits                   0
-├ RAM accesses                 0
-└ Est. cycles               2376
-</pre></div>
+            <div class="output"><pre><span class="line">[<span class="bold fg10">√</span>] fib_short<span class="dimmed"><span> (10ms)</span></span>
+</span><span class="line">├ Instructions              1741
+</span><span class="line">├ L1 hits                   2374
+</span><span class="line">├ L2/L3 hits                   0
+</span><span class="line">├ RAM accesses                 0
+</span><span class="line">└ Est. cycles               2374</span></pre></div>
             <div class="input input-hidden" data-exit-status="0"><pre><span class="prompt">$</span> export CACHEGRIND_WRAPPER&#x3D;&quot;$CACHEGRIND_WRAPPER:--profile&#x3D;cmp&quot;</pre></div>
-            <div class="output"><pre></pre></div>
+<div class="output-sep"></div>            <div class="output"><pre></pre></div>
             <div class="input" data-exit-status="0"><pre><span class="prompt">$</span> cargo bench --bench all fib_short
 # after some changes...</pre></div>
-            <div class="output"><pre>[<span class="bold fg10">√</span>] fib_short<span class="dimmed"> (10ms)</span>
-├ Instructions              1739<span class="fg10">           -2 (-0.11%)</span>
-├ L1 hits                   2390<span class="fg9">          +14 (+0.59%)</span>
-├ L2/L3 hits                   3<span class="fg9">           +3 (+inf%)</span>
-├ RAM accesses                 0
-└ Est. cycles               2405<span class="fg9">          +29 (+1.22%)</span>
-</pre></div>
+            <div class="output"><pre><span class="line">[<span class="bold fg10">√</span>] fib_short<span class="dimmed"><span> (10ms)</span></span>
+</span><span class="line">├ Instructions              1739<span class="fg10">           -2 (-0.11%)</span>
+</span><span class="line">├ L1 hits                   2390<span class="fg9">          +16 (+0.67%)</span>
+</span><span class="line">├ L2/L3 hits                   3<span class="fg9">           +3 (+inf%)</span>
+</span><span class="line">├ RAM accesses                 0
+</span><span class="line">└ Est. cycles               2405<span class="fg9">          +31 (+1.31%)</span></span></pre></div>
           </div>
         </foreignObject>
       </svg>
     </g>
-    <text x="10" y="18" style="font: 14px SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace; fill: #ff005b;">
+    <text x="10" y="16.8" style="font: 14px monospace; fill: #ff005b;">
       HTML embedding not supported.
       Consult <tspan style="text-decoration: underline; text-decoration-thickness: 1px;"><a href="https://github.com/slowli/term-transcript/blob/HEAD/FAQ.md">term-transcript docs</a></tspan> for details.
     </text>
