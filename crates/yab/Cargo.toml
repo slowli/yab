@@ -16,9 +16,10 @@ features = ["serde"]
 
 [dependencies]
 # Private dependencies (not exposed in public crate APIs)
+anstream.workspace = true
+anstyle.workspace = true
 clap = { workspace = true, features = ["derive", "env", "wrap_help"] }
 crabgrind = { workspace = true, optional = true }
-anes.workspace = true
 num_cpus.workspace = true
 regex.workspace = true
 thiserror.workspace = true

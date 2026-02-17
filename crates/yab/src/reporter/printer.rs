@@ -9,9 +9,8 @@ use std::{
     time::Instant,
 };
 
-use anes::{
-    Attribute, Color, ResetAttributes, SetAttribute, SetBackgroundColor, SetForegroundColor,
-};
+use anstream::ColorChoice;
+use anstyle::{AnsiColor, Color, Style};
 
 use super::{BenchmarkOutput, Logger, Reporter};
 use crate::{
@@ -33,49 +32,16 @@ enum Checkmark {
     Fail,
 }
 
-#[derive(Debug)]
-struct Styled<'a, W: io::Write>(&'a mut LinePrinter<W>);
-
-impl<W: io::Write> ops::Deref for Styled<'_, W> {
-    type Target = LinePrinter<W>;
-
-    fn deref(&self) -> &Self::Target {
-        self.0
-    }
-}
-
-impl<W: io::Write> ops::DerefMut for Styled<'_, W> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.0
-    }
-}
-
-impl<W: io::Write> Drop for Styled<'_, W> {
-    fn drop(&mut self) {
-        if self.0.style_nesting > 0 {
-            self.0.style_nesting -= 1;
-            if self.0.style_nesting == 0 {
-                self.0.print(format_args!("{ResetAttributes}"));
-            }
-        }
-    }
-}
+const PASS: Style = AnsiColor::BrightGreen.on_default().bold();
+const FAIL: Style = AnsiColor::BrightRed.on_default().bold();
+const DIMMED: Style = Style::new().dimmed();
 
 #[derive(Debug)]
 struct LinePrinter<W> {
     inner: W,
-    styling: bool,
-    style_nesting: usize,
 }
 
 impl<W: io::Write> LinePrinter<W> {
-    fn borrow(&mut self) -> Styled<'_, W> {
-        if self.styling {
-            self.style_nesting += 1;
-        }
-        Styled(self)
-    }
-
     fn print(&mut self, args: fmt::Arguments<'_>) {
         self.inner
             .write_fmt(args)
@@ -88,63 +54,41 @@ impl<W: io::Write> LinePrinter<W> {
             .expect("I/O error writing to stderr");
     }
 
-    fn fg(&mut self, color: Color) -> Styled<'_, W> {
-        if self.styling {
-            self.print(format_args!("{}", SetForegroundColor(color)));
-        }
-        self.borrow()
-    }
-
-    fn bg(&mut self, color: Color) -> Styled<'_, W> {
-        if self.styling {
-            self.print(format_args!("{}", SetBackgroundColor(color)));
-        }
-        self.borrow()
-    }
-
-    fn bold(&mut self) -> Styled<'_, W> {
-        if self.styling {
-            self.print(format_args!("{}", SetAttribute(Attribute::Bold)));
-        }
-        self.borrow()
-    }
-
-    fn dimmed(&mut self) -> Styled<'_, W> {
-        if self.styling {
-            self.print(format_args!("{}", SetAttribute(Attribute::Faint)));
-        }
-        self.borrow()
-    }
-
     fn print_checkbox(&mut self, mark: Checkmark) {
+        const IN_PROGRESS: Style = AnsiColor::BrightCyan.on_default();
+
         self.print_str("[");
         match mark {
-            Checkmark::InProgress => self.fg(Color::Cyan).print_str("*"),
-            Checkmark::Pass => self.bold().fg(Color::Green).print_str("√"),
-            Checkmark::Fail => self.bold().fg(Color::Red).print_str("x"),
+            Checkmark::InProgress => self.print(format_args!("{IN_PROGRESS}*{IN_PROGRESS:#}")),
+            Checkmark::Pass => self.print(format_args!("{PASS}√{PASS:#}")),
+            Checkmark::Fail => self.print(format_args!("{FAIL}x{FAIL:#}")),
         }
         self.print_str("] ");
     }
 
     fn print_debug(&mut self, id: Option<&BenchmarkId>, args: &dyn fmt::Display) {
+        const DEBUG: Style = Style::new()
+            .bold()
+            .fg_color(Some(Color::Ansi(AnsiColor::BrightWhite)))
+            .bg_color(Some(Color::Ansi(AnsiColor::Magenta)));
+
         if let Some(id) = id {
             self.print_checkbox(Checkmark::InProgress);
             self.print_id(id, true);
             self.print_str(":");
         } else {
-            self.bold()
-                .bg(Color::DarkMagenta)
-                .fg(Color::White)
-                .print_str("DEBUG:");
+            self.print(format_args!("{DEBUG}DEBUG:{DEBUG:#}"));
         }
         self.print(format_args!(" {args}\n"));
     }
 
     fn print_warning(&mut self, id: Option<&BenchmarkId>, args: &dyn fmt::Display) {
-        self.bold()
-            .bg(Color::Yellow)
-            .fg(Color::White)
-            .print_str(" WARN:");
+        const WARN: Style = Style::new()
+            .bold()
+            .fg_color(Some(Color::Ansi(AnsiColor::BrightWhite)))
+            .bg_color(Some(Color::Ansi(AnsiColor::BrightYellow)));
+
+        self.print(format_args!("{WARN} WARN:{WARN:#}"));
         if let Some(id) = id {
             self.print_str(" ");
             self.print_id(id, true);
@@ -154,10 +98,12 @@ impl<W: io::Write> LinePrinter<W> {
     }
 
     fn print_error(&mut self, id: Option<&BenchmarkId>, args: &dyn fmt::Display) {
-        self.bold()
-            .bg(Color::Red)
-            .fg(Color::White)
-            .print_str("ERROR:");
+        const ERROR: Style = Style::new()
+            .bold()
+            .fg_color(Some(Color::Ansi(AnsiColor::BrightWhite)))
+            .bg_color(Some(Color::Ansi(AnsiColor::BrightRed)));
+
+        self.print(format_args!("{ERROR}ERROR:{ERROR:#}"));
         if let Some(id) = id {
             self.print_str(" ");
             self.print_id(id, true);
@@ -176,30 +122,38 @@ impl<W: io::Write> LinePrinter<W> {
 
         self.print(format_args!("{name}"));
         if let Some(args) = args {
-            self.fg(Color::DarkYellow).print(format_args!("/{args}"));
+            let args_style = AnsiColor::Yellow.on_default();
+            self.print(format_args!("{args_style}/{args}{args_style:#}"));
         }
         if let Some(capture) = capture {
-            self.fg(Color::DarkCyan).print(format_args!("/{capture}"));
+            let capture_style = AnsiColor::Cyan.on_default();
+            self.print(format_args!("{capture_style}/{capture}{capture_style:#}"));
         }
         if print_location {
-            self.dimmed()
-                .print(format_args!(" @ {}:{}", location.file(), location.line()));
+            self.print(format_args!(
+                "{DIMMED} @ {}:{}{DIMMED:#}",
+                location.file(),
+                location.line()
+            ));
         }
     }
 
     #[allow(clippy::cast_precision_loss, clippy::cast_possible_wrap)] // fine for reporting
     fn print_diff(&mut self, new: u64, old: u64) {
+        const LESS: Style = AnsiColor::BrightGreen.on_default();
+        const MORE: Style = AnsiColor::BrightRed.on_default();
+
         match new.cmp(&old) {
             Ordering::Less => {
-                self.fg(Color::Green).print(format_args!(
-                    " {:>+DIFF_WIDTH$} ({:+.2}%)",
+                self.print(format_args!(
+                    "{LESS} {:>+DIFF_WIDTH$} ({:+.2}%){LESS:#}",
                     new as i64 - old as i64,
                     (old - new) as f32 * -100.0 / old as f32
                 ));
             }
             Ordering::Greater => {
-                self.fg(Color::Red).print(format_args!(
-                    " {:>+DIFF_WIDTH$} ({:+.2}%)",
+                self.print(format_args!(
+                    "{MORE} {:>+DIFF_WIDTH$} ({:+.2}%){MORE:#}",
                     new - old,
                     (new - old) as f32 * 100.0 / old as f32
                 ));
@@ -281,7 +235,7 @@ pub(crate) enum Verbosity {
 }
 
 #[derive(Debug)]
-pub(crate) struct PrintingReporter<W = io::Stderr> {
+pub(crate) struct PrintingReporter<W = anstream::Stderr> {
     verbosity: Verbosity,
     breakdown: bool,
     line_printer: Arc<Mutex<LinePrinter<W>>>,
@@ -298,11 +252,9 @@ impl<W> Clone for PrintingReporter<W> {
 }
 
 impl PrintingReporter {
-    pub(crate) fn new(styling: bool, verbosity: Verbosity, breakdown: bool) -> Self {
+    pub(crate) fn new(styling: ColorChoice, verbosity: Verbosity, breakdown: bool) -> Self {
         let line_printer = LinePrinter {
-            inner: io::stderr(),
-            styling,
-            style_nesting: 0,
+            inner: anstream::AutoStream::new(io::stderr(), styling),
         };
         Self {
             verbosity,
@@ -350,7 +302,7 @@ impl<W: io::Write> super::TestReporter for TestReporter<W> {
         printer.print_checkbox(Checkmark::Fail);
         printer.print_id(&self.test_id, self.parent.verbosity >= Verbosity::Verbose);
         printer.print_str(": ");
-        printer.bold().fg(Color::Red).print_str("FAILED");
+        printer.print(format_args!("{FAIL}FAILED{FAIL:#}"));
         printer.print_str("\n");
     }
 }
@@ -479,7 +431,8 @@ impl<W: io::Write + fmt::Debug + Send> super::BenchmarkReporter for BenchmarkRep
         printer.print_id(&self.bench_id, self.parent.verbosity >= Verbosity::Verbose);
         if let Some(started_at) = self.started_at {
             let latency = started_at.elapsed();
-            printer.dimmed().print(format_args!(" ({latency:?})"));
+            let dimmed = Style::new().dimmed();
+            printer.print(format_args!("{dimmed} ({latency:?}){dimmed:#}"));
         }
         printer.print_str("\n");
 
@@ -530,7 +483,7 @@ where
 }
 
 #[derive(Debug)]
-struct StandardLogger<W = io::Stderr> {
+struct StandardLogger<W = anstream::Stderr> {
     reporter: PrintingReporter<W>,
     id: Option<BenchmarkId>,
 }
@@ -679,14 +632,14 @@ impl<'a> BreakdownList<'a> {
         }
     }
 
-    fn color_diff(diff: f32, threshold: f32) -> Color {
+    fn style_diff(diff: f32, threshold: f32) -> Style {
         debug_assert!(threshold > 0.0);
         if diff > threshold {
-            Color::Red // positive change is bad
+            AnsiColor::BrightRed.on_default() // positive change is bad
         } else if diff < -threshold {
-            Color::Green
+            AnsiColor::BrightGreen.on_default()
         } else {
-            Color::Default
+            Style::new().dimmed()
         }
     }
 
@@ -694,14 +647,16 @@ impl<'a> BreakdownList<'a> {
     fn print<W: io::Write>(&self, printer: &mut LinePrinter<W>) {
         const FN_NAME_WIDTH: usize = 60;
         const DIFF_THRESHOLD: f32 = 0.1; // measured in percent
+        const IDX: Style = AnsiColor::BrightCyan.on_default();
 
         if self.items.is_empty() {
             return;
         }
 
-        printer
-            .bold()
-            .print_str("    %   % diff  Instr.diff  Function\n");
+        let bold = Style::new().bold();
+        printer.print(format_args!(
+            "{bold}    %   % diff  Instr.diff  Function{bold:#}\n"
+        ));
 
         let mut full_fns = vec![];
         for (function, item) in &self.items {
@@ -717,24 +672,25 @@ impl<'a> BreakdownList<'a> {
 
             printer.print(format_args!("{percentage:>4.1}%  "));
             if let Some(change) = percent_change {
-                let color = Self::color_diff(change, DIFF_THRESHOLD);
-                printer.fg(color).print(format_args!("{change:>+5.1}pp"));
+                let style = Self::style_diff(change, DIFF_THRESHOLD);
+                printer.print(format_args!("{style}{change:>+5.1}pp{style:#}"));
             } else {
-                printer.dimmed().print_str("      -"); // +99.9pp
+                printer.print(format_args!("      {DIMMED}-{DIMMED:#}")); // +99.9pp
             }
             printer.print_str("  ");
 
             {
-                let color = instr_change.map_or(Color::Default, |change| {
-                    Self::color_diff(change, DIFF_THRESHOLD)
+                let style = instr_change.map_or(Style::new(), |change| {
+                    Self::style_diff(change, DIFF_THRESHOLD)
                 });
-                let mut printer = printer.fg(color);
+                printer.print(format_args!("{style}"));
                 if let Some(instr_change) = instr_change {
                     let accuracy = (instr_change.abs() < 100.0).into();
                     printer.print(format_args!("{instr_change:>+9.accuracy$}%"));
                 } else {
-                    printer.dimmed().print_str("         -");
+                    printer.print_str("         -");
                 }
+                printer.print(format_args!("{style:#}"));
             }
             printer.print_str("  ");
 
@@ -753,20 +709,18 @@ impl<'a> BreakdownList<'a> {
             printer.print_str(&function);
             if let Some(idx) = shortened_idx {
                 printer.print_str("… ");
-                printer.fg(Color::Cyan).print(format_args!("[{idx}]"));
+                printer.print(format_args!("{IDX}[{idx}]{IDX:#}"));
             }
             printer.print_str("\n");
         }
 
         if !full_fns.is_empty() {
-            printer.bold().print_str("-----\n");
+            printer.print(format_args!("{bold}-----{bold:#}\n"));
         }
 
         for (i, full_fn) in full_fns.iter().enumerate() {
             let space = if i < 9 { " " } else { "" };
-            printer
-                .fg(Color::Cyan)
-                .print(format_args!("{space}[{}]", i + 1));
+            printer.print(format_args!("{IDX}{space}[{}]{IDX:#}", i + 1));
             printer.print(format_args!(" {full_fn}\n"));
         }
     }
@@ -780,11 +734,7 @@ mod tests {
     use crate::cachegrind::{CachegrindDataPoint, FullCachegrindStats};
 
     fn mock_reporter(verbosity: Verbosity) -> PrintingReporter<Vec<u8>> {
-        let line_printer = LinePrinter {
-            inner: vec![],
-            styling: false,
-            style_nesting: 0,
-        };
+        let line_printer = LinePrinter { inner: vec![] };
         PrintingReporter {
             verbosity,
             line_printer: Arc::new(Mutex::new(line_printer)),

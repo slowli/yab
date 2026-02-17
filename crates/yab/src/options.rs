@@ -1,8 +1,6 @@
 use std::{
     env, error,
     ffi::OsString,
-    io,
-    io::IsTerminal,
     num,
     num::NonZeroUsize,
     path::{Path, PathBuf},
@@ -163,11 +161,11 @@ impl BenchOptions {
         }
     }
 
-    pub(crate) fn styling(&self) -> bool {
+    pub(crate) fn styling(&self) -> anstream::ColorChoice {
         match self.color {
-            ColorChoice::Always => true,
-            ColorChoice::Never => false,
-            ColorChoice::Auto => io::stderr().is_terminal(),
+            ColorChoice::Always => anstream::ColorChoice::AlwaysAnsi,
+            ColorChoice::Never => anstream::ColorChoice::Never,
+            ColorChoice::Auto => anstream::ColorChoice::Auto,
         }
     }
 
