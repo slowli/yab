@@ -267,7 +267,7 @@ impl PrintingReporter {
         println!("{id}: benchmark");
     }
 
-    pub(crate) fn to_logger(&self) -> impl Logger {
+    pub(crate) fn to_logger(&self) -> impl Logger + use<> {
         StandardLogger {
             reporter: self.clone(),
             id: None,
