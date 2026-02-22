@@ -91,12 +91,7 @@ fn transform_output<'s>(output_lines: impl Iterator<Item = StyledStr<'s>>) -> St
         buffer.push_text("\n");
     }
 
-    // Remove the ending newlines; captured transcripts have them removed.
-    let mut buffer = buffer.build();
-    while buffer.text().ends_with('\n') {
-        buffer.pop();
-    }
-    buffer
+    buffer.build()
 }
 
 fn test_config(sequential: bool) -> (TestConfig<StdShell>, TestLock) {

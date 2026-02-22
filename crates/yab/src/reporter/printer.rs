@@ -928,9 +928,15 @@ mod tests {
         let buffer = extract_buffer(reporter);
         let lines: Vec<_> = buffer.as_str().lines().collect();
         assert!(lines.len() > 10, "{buffer}");
-        assert!(lines[0].text().starts_with("[*] test @"), "{buffer}");
-        assert!(lines[0].text().contains("printer.rs"));
-        assert!(lines[1].text().starts_with("[√] test @"), "{buffer}");
+        assert!(
+            lines[0].starts_with(styled!("[[[cyan!]]*[[/]]] test[[dim]] @")),
+            "{buffer}"
+        );
+        assert!(lines[0].contains(styled!("[[dim]]printer.rs")), "{buffer}");
+        assert!(
+            lines[1].starts_with(styled!("[[[bold green!]]√[[/]]] test[[dim]] @")),
+            "{buffer}"
+        );
         assert_eq!(lines[2], styled!("├ Instructions               100"));
         assert_eq!(lines[3], styled!("├ L1 hits                    250"));
         assert_eq!(lines[4], styled!("│ ├ Instr.                    80"));
