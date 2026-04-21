@@ -6,10 +6,10 @@ use std::{
 };
 
 use crate::{
+    BenchmarkId,
     bencher::Baseline,
     options::BenchOptions,
     reporter::{BenchmarkOutput, BenchmarkReporter, Logger, Reporter},
-    BenchmarkId,
 };
 
 #[derive(Debug)]
@@ -115,7 +115,7 @@ pub(crate) struct RegressionChecker {
 }
 
 impl RegressionChecker {
-    pub fn new(threshold: f64) -> Self {
+    pub(crate) fn new(threshold: f64) -> Self {
         Self {
             threshold,
             regressed_benches: Arc::default(),

@@ -12,8 +12,8 @@ use std::{
 };
 
 use yab::{
-    reporter::BenchmarkOutput, AccessSummary, CachegrindOutput, CachegrindStats,
-    FullCachegrindStats,
+    AccessSummary, CachegrindOutput, CachegrindStats, FullCachegrindStats,
+    reporter::BenchmarkOutput,
 };
 use yab_e2e_tests::EXPORTER_OUTPUT_VAR;
 
@@ -463,7 +463,7 @@ fn using_custom_job_count() {
     let out_path = temp_dir.path().join("out.json");
     let target_path = temp_dir.path().join("target");
 
-    let status = Command::new(EXE_PATH)
+    let exit_status = Command::new(EXE_PATH)
         .args(["--bench", "fib"])
         .env(EXPORTER_OUTPUT_VAR, &out_path)
         .env("CACHEGRIND_OUT_DIR", &target_path)
@@ -471,12 +471,12 @@ fn using_custom_job_count() {
         .stderr(Stdio::null())
         .status()
         .expect("failed running benches");
-    assert!(status.success());
+    assert!(exit_status.success());
 
     let initial_outputs = read_outputs(&out_path);
 
     for jobs in [1, 3] {
-        let status = Command::new(EXE_PATH)
+        let exit_status = Command::new(EXE_PATH)
             .args(["--jobs", &jobs.to_string(), "--bench", "fib"])
             .env(EXPORTER_OUTPUT_VAR, &out_path)
             .env("CACHEGRIND_OUT_DIR", &target_path)
@@ -484,7 +484,7 @@ fn using_custom_job_count() {
             .stderr(Stdio::null())
             .status()
             .expect("failed running benches");
-        assert!(status.success());
+        assert!(exit_status.success());
 
         let outputs = read_outputs(&out_path);
         for (name, output) in outputs {

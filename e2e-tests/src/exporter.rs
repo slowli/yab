@@ -5,8 +5,8 @@ use std::{
 };
 
 use yab::{
-    reporter::{BenchmarkOutput, BenchmarkReporter, Reporter},
     BenchmarkId,
+    reporter::{BenchmarkOutput, BenchmarkReporter, Reporter},
 };
 
 pub const EXPORTER_OUTPUT_VAR: &str = "YAB_BENCHMARKS_JSON";

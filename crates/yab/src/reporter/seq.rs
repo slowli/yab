@@ -12,19 +12,19 @@ pub(crate) struct SeqReporter {
 }
 
 impl SeqReporter {
-    pub fn new(logger: Arc<dyn Logger>) -> Self {
+    pub(crate) fn new(logger: Arc<dyn Logger>) -> Self {
         Self {
             reporters: vec![],
             logger,
         }
     }
 
-    pub fn push(&mut self, mut reporter: Box<dyn Reporter>) {
+    pub(crate) fn push(&mut self, mut reporter: Box<dyn Reporter>) {
         reporter.set_logger(&self.logger);
         self.reporters.push(reporter);
     }
 
-    pub fn ok_all(&mut self) {
+    pub(crate) fn ok_all(&mut self) {
         for reporter in mem::take(&mut self.reporters) {
             reporter.ok();
         }

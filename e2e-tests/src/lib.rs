@@ -1,19 +1,12 @@
-// Linter settings.
-#![warn(missing_debug_implementations, bare_trait_objects)]
-#![warn(clippy::all, clippy::pedantic)]
-#![allow(
-    clippy::must_use_candidate,
-    clippy::module_name_repetitions,
-    clippy::missing_panics_doc
-)]
+#![allow(missing_docs, clippy::missing_panics_doc)]
 
 use std::{
     collections::HashSet,
     hash::{BuildHasherDefault, DefaultHasher},
 };
 
-use rand::{rngs::SmallRng, RngExt, SeedableRng};
-use yab::{black_box, captures, Bencher, BenchmarkId};
+use rand::{RngExt, SeedableRng, rngs::SmallRng};
+use yab::{Bencher, BenchmarkId, black_box, captures};
 
 use crate::exporter::BenchmarkExporter;
 pub use crate::exporter::EXPORTER_OUTPUT_VAR;

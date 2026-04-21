@@ -12,15 +12,14 @@ use std::{
 };
 
 use crate::{
-    cachegrind,
+    BenchmarkId, Capture, cachegrind,
     cachegrind::{CachegrindOutput, SpawnArgs},
     options::{BenchOptions, CachegrindOptions, IdMatcher, Options},
     reporter::{
-        baseline::{BaselineSaver, RegressionChecker},
         BenchmarkOutput, BenchmarkReporter, Logger, PrintingReporter, Reporter, SeqReporter,
+        baseline::{BaselineSaver, RegressionChecker},
     },
     utils::Semaphore,
-    BenchmarkId, Capture,
 };
 
 pub(crate) type Baseline = BTreeMap<String, CachegrindOutput>;

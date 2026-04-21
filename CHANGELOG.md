@@ -13,7 +13,7 @@ The project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html)
 ### Changed
 
 - Use regular expressions to match benchmark IDs.
-- Bump minimum supported Rust version to 1.85.
+- Bump minimum supported Rust version to 1.86 and switch to 2024 edition.
 - Rework reporter traits by extracting logging functionality to a separate trait.
 
 ### Fixed

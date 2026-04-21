@@ -100,11 +100,42 @@ impl AllStats {
     }
 }
 
+fn print_stats(writer: &mut impl io::Write, stats: &CachegrindOutput) {
+    let breakdown = &stats.breakdown;
+    let mut functions_by_file = HashMap::<_, Vec<_>>::new();
+    for (function, fn_stats) in breakdown {
+        let fn_stats = fn_stats.as_full().unwrap();
+        functions_by_file
+            .entry(function.filename().unwrap_or("???"))
+            .or_default()
+            .push((function.name(), fn_stats));
+    }
+
+    for (filename, functions) in functions_by_file {
+        writeln!(writer, "fl={filename}").unwrap();
+        for (name, fn_stats) in functions {
+            writeln!(writer, "fn={name}").unwrap();
+            writeln!(
+                writer,
+                "0 {Ir} {I1mr} {ILmr} {Dr} {D1mr} {DLmr} {Dw} {D1mw} {DLmw}",
+                Ir = fn_stats.instructions.total,
+                I1mr = fn_stats.instructions.l1_misses,
+                ILmr = fn_stats.instructions.l3_misses,
+                Dr = fn_stats.data_reads.total,
+                D1mr = fn_stats.data_reads.l1_misses,
+                DLmr = fn_stats.data_reads.l3_misses,
+                Dw = fn_stats.data_writes.total,
+                D1mw = fn_stats.data_writes.l1_misses,
+                DLmw = fn_stats.data_writes.l3_misses
+            )
+            .unwrap();
+        }
+    }
+}
+
 fn main() {
     let emulate_panic = env::args().any(|arg| arg == "--emulate-panic");
-    if emulate_panic {
-        panic!("emulated panic!");
-    }
+    assert!(!emulate_panic, "emulated panic!");
 
     let profile = env::args().find_map(|arg| Some(arg.strip_prefix("--profile=")?.to_owned()));
 
@@ -169,36 +200,7 @@ fn main() {
 
     if !is_baseline {
         if let Some(stats) = stats.breakdown.get(&bench_name) {
-            let breakdown = &stats.breakdown;
-            let mut functions_by_file = HashMap::<_, Vec<_>>::new();
-            for (function, fn_stats) in breakdown {
-                let fn_stats = fn_stats.as_full().unwrap();
-                functions_by_file
-                    .entry(function.filename().unwrap_or("???"))
-                    .or_default()
-                    .push((function.name(), fn_stats));
-            }
-
-            for (filename, functions) in functions_by_file {
-                writeln!(&mut writer, "fl={filename}").unwrap();
-                for (name, fn_stats) in functions {
-                    writeln!(&mut writer, "fn={name}").unwrap();
-                    writeln!(
-                        &mut writer,
-                        "0 {Ir} {I1mr} {ILmr} {Dr} {D1mr} {DLmr} {Dw} {D1mw} {DLmw}",
-                        Ir = fn_stats.instructions.total,
-                        I1mr = fn_stats.instructions.l1_misses,
-                        ILmr = fn_stats.instructions.l3_misses,
-                        Dr = fn_stats.data_reads.total,
-                        D1mr = fn_stats.data_reads.l1_misses,
-                        DLmr = fn_stats.data_reads.l3_misses,
-                        Dw = fn_stats.data_writes.total,
-                        D1mw = fn_stats.data_writes.l1_misses,
-                        DLmw = fn_stats.data_writes.l3_misses
-                    )
-                    .unwrap();
-                }
-            }
+            print_stats(&mut writer, stats);
         }
     }
 

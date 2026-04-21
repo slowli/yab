@@ -1,8 +1,6 @@
 use std::{
     env, error,
     ffi::OsString,
-    io,
-    io::IsTerminal,
     num,
     num::NonZeroUsize,
     path::{Path, PathBuf},
@@ -14,9 +12,9 @@ use clap::{ColorChoice, Parser};
 use regex::Regex;
 
 use crate::{
+    BenchmarkId,
     bencher::BenchMode,
     reporter::{Logger, Verbosity},
-    BenchmarkId,
 };
 
 const DEFAULT_CACHEGRIND_WRAPPER: &[&str] = &[
@@ -147,11 +145,11 @@ pub(crate) struct BenchOptions {
 }
 
 impl BenchOptions {
-    pub fn report(&self, logger: &impl Logger) {
+    pub(crate) fn report(&self, logger: &impl Logger) {
         logger.debug(&format_args!("started benchmarking with options: {self:?}"));
     }
 
-    pub fn mode(&self) -> BenchMode {
+    pub(crate) fn mode(&self) -> BenchMode {
         if self.list {
             BenchMode::List
         } else if self.print.is_some() {
@@ -163,15 +161,15 @@ impl BenchOptions {
         }
     }
 
-    pub fn styling(&self) -> bool {
+    pub(crate) fn styling(&self) -> anstream::ColorChoice {
         match self.color {
-            ColorChoice::Always => true,
-            ColorChoice::Never => false,
-            ColorChoice::Auto => io::stderr().is_terminal(),
+            ColorChoice::Always => anstream::ColorChoice::AlwaysAnsi,
+            ColorChoice::Never => anstream::ColorChoice::Never,
+            ColorChoice::Auto => anstream::ColorChoice::Auto,
         }
     }
 
-    pub fn verbosity(&self) -> Verbosity {
+    pub(crate) fn verbosity(&self) -> Verbosity {
         if self.quiet {
             Verbosity::Quiet
         } else if self.verbose {
@@ -181,7 +179,7 @@ impl BenchOptions {
         }
     }
 
-    pub fn id_matcher(&self) -> Result<IdMatcher, regex::Error> {
+    pub(crate) fn id_matcher(&self) -> Result<IdMatcher, regex::Error> {
         Ok(match &self.filter {
             None => IdMatcher::Any,
             Some(str) if self.exact => IdMatcher::Exact(str.clone()),
@@ -189,7 +187,7 @@ impl BenchOptions {
         })
     }
 
-    pub fn cachegrind_wrapper(&self, out_file: &Path) -> Command {
+    pub(crate) fn cachegrind_wrapper(&self, out_file: &Path) -> Command {
         let mut command = Command::new(&self.cachegrind_wrapper[0]);
         command.args(&self.cachegrind_wrapper[1..]);
         let mut out_file_arg = OsString::from("--cachegrind-out-file=");
@@ -198,7 +196,7 @@ impl BenchOptions {
         command
     }
 
-    pub fn save_baseline_path(&self) -> Option<PathBuf> {
+    pub(crate) fn save_baseline_path(&self) -> Option<PathBuf> {
         let path = self.save_baseline.as_ref()?;
         Some(self.resolve_baseline_path(path))
     }
@@ -212,21 +210,21 @@ impl BenchOptions {
         dir.join(format!("{name}.baseline.json"))
     }
 
-    pub fn baseline_path(&self) -> Option<PathBuf> {
+    pub(crate) fn baseline_path(&self) -> Option<PathBuf> {
         let path = self.baseline.as_ref()?;
         Some(self.resolve_baseline_path(path))
     }
 
-    pub fn has_print_baseline(&self) -> bool {
+    pub(crate) fn has_print_baseline(&self) -> bool {
         matches!(&self.print, Some(Some(_)))
     }
 
-    pub fn print_baseline_path(&self) -> Option<PathBuf> {
+    pub(crate) fn print_baseline_path(&self) -> Option<PathBuf> {
         let path = self.print.as_ref()?.as_ref()?;
         Some(self.resolve_baseline_path(path))
     }
 
-    pub fn regression_threshold(&self) -> Option<f64> {
+    pub(crate) fn regression_threshold(&self) -> Option<f64> {
         self.baseline.is_some().then_some(self.threshold)
     }
 }
@@ -258,7 +256,7 @@ impl CachegrindOptions {
         Self::parse_args(env::args())
     }
 
-    pub fn push_args(&self, command: &mut Command) {
+    pub(crate) fn push_args(&self, command: &mut Command) {
         let is_baseline = if self.is_baseline { "+" } else { "-" };
         command.args([
             Self::MARKER,
@@ -313,7 +311,7 @@ pub(crate) enum IdMatcher {
 }
 
 impl IdMatcher {
-    pub fn matches(&self, id: &BenchmarkId) -> bool {
+    pub(crate) fn matches(&self, id: &BenchmarkId) -> bool {
         match self {
             Self::Any => true,
             Self::Exact(s) => *s == id.to_string(),
@@ -329,7 +327,7 @@ pub(crate) enum Options {
 }
 
 impl Options {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         match CachegrindOptions::new() {
             Err(err) => {
                 eprintln!("Failed starting instrumented binary: {err}");

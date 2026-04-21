@@ -20,7 +20,7 @@ pub(crate) struct Semaphore {
 }
 
 impl Semaphore {
-    pub fn new(permits: usize) -> Self {
+    pub(crate) fn new(permits: usize) -> Self {
         Self {
             capacity: permits,
             permits: Mutex::new(permits),
@@ -28,11 +28,11 @@ impl Semaphore {
         }
     }
 
-    pub fn capacity(&self) -> usize {
+    pub(crate) fn capacity(&self) -> usize {
         self.capacity
     }
 
-    pub fn acquire_owned(self: &Arc<Self>) -> SemaphoreGuard {
+    pub(crate) fn acquire_owned(self: &Arc<Self>) -> SemaphoreGuard {
         let mut guard = self
             .cvar
             .wait_while(self.permits.lock().unwrap(), |permits| *permits == 0)

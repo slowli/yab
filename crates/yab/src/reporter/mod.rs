@@ -8,7 +8,7 @@ pub(crate) use self::{
     printer::{PrintingReporter, Verbosity},
     seq::SeqReporter,
 };
-use crate::{cachegrind::CachegrindOutput, BenchmarkId, CachegrindStats};
+use crate::{BenchmarkId, CachegrindStats, cachegrind::CachegrindOutput};
 
 pub(crate) mod baseline;
 mod printer;
