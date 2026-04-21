@@ -6,11 +6,11 @@ use std::{
     env, fs, io,
     path::Path,
     process::{Command, Stdio},
+    sync::LazyLock,
     thread,
     time::Duration,
 };
 
-use once_cell::sync::Lazy;
 use yab::{
     reporter::BenchmarkOutput, AccessSummary, CachegrindOutput, CachegrindStats,
     FullCachegrindStats,
@@ -24,8 +24,9 @@ type Baseline = HashMap<String, CachegrindOutput>;
 
 // Because benchmarked functions are simple, hopefully the snapshot won't depend much on architecture,
 // Rust compiler version etc.
-static EXPECTED_STATS: Lazy<Baseline> =
-    Lazy::new(|| serde_json::from_str(include_str!("../benches/all/main.baseline.json")).unwrap());
+static EXPECTED_STATS: LazyLock<Baseline> = LazyLock::new(|| {
+    serde_json::from_str(include_str!("../benches/all/main.baseline.json")).unwrap()
+});
 
 const EXPECTED_BENCH_NAMES: &[&str] = &[
     "fib_short",
