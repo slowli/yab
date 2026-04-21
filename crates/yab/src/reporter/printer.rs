@@ -14,8 +14,8 @@ use anstyle::{AnsiColor, Color, Style};
 
 use super::{BenchmarkOutput, Logger, Reporter};
 use crate::{
-    cachegrind::{AccessSummary, CachegrindFunction, CachegrindOutput, CachegrindStats},
     BenchmarkId, FullCachegrindStats,
+    cachegrind::{AccessSummary, CachegrindFunction, CachegrindOutput, CachegrindStats},
 };
 
 /// Full width of the label column.
@@ -727,7 +727,7 @@ impl<'a> BreakdownList<'a> {
 mod tests {
     use std::collections::HashMap;
 
-    use styled_str::{styled, StyledString};
+    use styled_str::{StyledString, styled};
 
     use super::*;
     use crate::cachegrind::{CachegrindDataPoint, FullCachegrindStats};
@@ -899,11 +899,15 @@ mod tests {
         );
         assert_eq!(
             lines[2],
-            styled!("10.0%  [[red!]]+10.0pp[[/]]  [[red!]]     +inf%[[/]]  <alloc::sync::Arc<T> as core::default::Default>::default")
+            styled!(
+                "10.0%  [[red!]]+10.0pp[[/]]  [[red!]]     +inf%[[/]]  <alloc::sync::Arc<T> as core::default::Default>::default"
+            )
         );
         assert_eq!(
             lines[3],
-            styled!(" 0.0%  [[green!]]-16.7pp[[/]]  [[green!]]     -100%[[/]]  <hashbrown::raw::RawTable<T,A> as core::ops::drop::Drop… [[cyan!]][1]")
+            styled!(
+                " 0.0%  [[green!]]-16.7pp[[/]]  [[green!]]     -100%[[/]]  <hashbrown::raw::RawTable<T,A> as core::ops::drop::Drop… [[cyan!]][1]"
+            )
         );
         assert_eq!(lines[4], styled!("[[bold]]-----"));
         assert_eq!(

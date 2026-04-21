@@ -11,9 +11,9 @@ use regex::Regex;
 use styled_str::{StyledStr, StyledString};
 use tempfile::TempDir;
 use term_transcript::{
+    ShellOptions, StdShell, UserInput,
     svg::{self, Template, TemplateOptions},
     test::{MatchKind, TestConfig},
-    ShellOptions, StdShell, UserInput,
 };
 
 const MOCK_CACHEGRIND_PATH: &str = env!("CARGO_BIN_EXE_mock-cachegrind");

@@ -6,10 +6,10 @@ use std::{
 };
 
 use crate::{
+    BenchmarkId,
     bencher::Baseline,
     options::BenchOptions,
     reporter::{BenchmarkOutput, BenchmarkReporter, Logger, Reporter},
-    BenchmarkId,
 };
 
 #[derive(Debug)]

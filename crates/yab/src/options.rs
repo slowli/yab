@@ -12,9 +12,9 @@ use clap::{ColorChoice, Parser};
 use regex::Regex;
 
 use crate::{
+    BenchmarkId,
     bencher::BenchMode,
     reporter::{Logger, Verbosity},
-    BenchmarkId,
 };
 
 const DEFAULT_CACHEGRIND_WRAPPER: &[&str] = &[

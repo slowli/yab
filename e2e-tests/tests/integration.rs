@@ -12,8 +12,8 @@ use std::{
 };
 
 use yab::{
-    reporter::BenchmarkOutput, AccessSummary, CachegrindOutput, CachegrindStats,
-    FullCachegrindStats,
+    AccessSummary, CachegrindOutput, CachegrindStats, FullCachegrindStats,
+    reporter::BenchmarkOutput,
 };
 use yab_e2e_tests::EXPORTER_OUTPUT_VAR;
 

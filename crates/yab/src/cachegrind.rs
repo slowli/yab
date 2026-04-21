@@ -16,7 +16,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{options::CachegrindOptions, BenchmarkId};
+use crate::{BenchmarkId, options::CachegrindOptions};
 
 #[derive(Debug)]
 pub(crate) struct ExecFailure {
@@ -703,7 +703,7 @@ impl Drop for CaptureGuard {
 }
 
 mod serde_helpers {
-    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
     use super::CachegrindFunction;
 

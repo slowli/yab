@@ -5,8 +5,8 @@ use std::{
     hash::{BuildHasherDefault, DefaultHasher},
 };
 
-use rand::{rngs::SmallRng, RngExt, SeedableRng};
-use yab::{black_box, captures, Bencher, BenchmarkId};
+use rand::{RngExt, SeedableRng, rngs::SmallRng};
+use yab::{Bencher, BenchmarkId, black_box, captures};
 
 use crate::exporter::BenchmarkExporter;
 pub use crate::exporter::EXPORTER_OUTPUT_VAR;
