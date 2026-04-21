@@ -12,7 +12,7 @@ repository = "https://github.com/slowli/yab"
 
 [workspace.dependencies]
 anstream = "1.0.0"
-anstyle = "1.0.13"
+anstyle = "1.0.14"
 assert_matches = "1.5.0"
 clap = "4.6.1"
 crabgrind = "0.2.4"
@@ -22,10 +22,10 @@ rand = "0.10.1"
 regex = "1.12.3"
 serde = "1"
 serde_json = "1"
-styled-str = { version = "=0.5.0-beta.1", git = "https://github.com/slowli/term-transcript", rev = "3b948fecca17eb87222f05907fe4235f3929ed96" }
+styled-str = { version = "=0.5.0-beta.1", git = "https://github.com/slowli/term-transcript", rev = "06172afe8197f4d2945c51edd41df4af83f82d70" }
 thiserror = "2.0"
 tempfile = "3.27.0"
-term-transcript = { version = "=0.5.0-beta.1", git = "https://github.com/slowli/term-transcript", rev = "3b948fecca17eb87222f05907fe4235f3929ed96" }
+term-transcript = { version = "=0.5.0-beta.1", git = "https://github.com/slowli/term-transcript", rev = "06172afe8197f4d2945c51edd41df4af83f82d70" }
 version-sync = "0.9.5"
 
 [workspace.lints.rust]
