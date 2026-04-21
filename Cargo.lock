@@ -1526,7 +1526,6 @@ dependencies = [
 name = "yab-e2e-tests"
 version = "0.1.0"
 dependencies = [
- "once_cell",
  "rand",
  "regex",
  "serde",
