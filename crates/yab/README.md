@@ -25,7 +25,7 @@ Define a benchmark binary and include it into your crate manifest:
 
 ```toml
 [dev-dependencies]
-yab = "0.1.0"
+yab = "0.2.0"
 
 [[bench]]
 name = "your_bench"

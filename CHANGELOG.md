@@ -5,6 +5,8 @@ The project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## 0.2.0 - 2026-07-18
+
 ### Added
 
 - Support saving / loading named baselines similarly to `criterion`.

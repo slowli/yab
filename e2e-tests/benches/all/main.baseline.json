@@ -154,18 +154,18 @@
   "hash_set/collect": {
     "summary": {
       "instructions": {
-        "total": 1542645,
-        "l1_misses": 15,
-        "l3_misses": 15
+        "total": 1562312,
+        "l1_misses": 13,
+        "l3_misses": 13
       },
       "data_reads": {
-        "total": 110504,
-        "l1_misses": 2744,
+        "total": 100524,
+        "l1_misses": 2768,
         "l3_misses": 3
       },
       "data_writes": {
-        "total": 96482,
-        "l1_misses": 8720,
+        "total": 116490,
+        "l1_misses": 8723,
         "l3_misses": 2296
       }
     }
@@ -173,12 +173,12 @@
   "hash_set/drain": {
     "summary": {
       "instructions": {
-        "total": 139369,
-        "l1_misses": 9,
-        "l3_misses": 9
+        "total": 138350,
+        "l1_misses": 10,
+        "l3_misses": 10
       },
       "data_reads": {
-        "total": 11068,
+        "total": 11069,
         "l1_misses": 2304,
         "l3_misses": 0
       },
@@ -192,18 +192,18 @@
   "hash_set/sum": {
     "summary": {
       "instructions": {
-        "total": 121280,
+        "total": 120260,
         "l1_misses": 0,
         "l3_misses": 0
       },
       "data_reads": {
-        "total": 11030,
-        "l1_misses": 2232,
+        "total": 11031,
+        "l1_misses": 2231,
         "l3_misses": 0
       },
       "data_writes": {
         "total": 6,
-        "l1_misses": 2,
+        "l1_misses": 3,
         "l3_misses": 0
       }
     }

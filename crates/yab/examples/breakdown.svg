@@ -1,5 +1,5 @@
-<!-- Created with term-transcript v0.5.0-beta.1 (https://github.com/slowli/term-transcript) -->
-<svg viewBox="0 -22 850 236.8" width="850" height="236.8" xmlns="http://www.w3.org/2000/svg">
+<!-- Created with term-transcript v0.5.0 (https://github.com/slowli/term-transcript) -->
+<svg viewBox="0 -22 850 220" width="850" height="220" xmlns="http://www.w3.org/2000/svg">
   <switch>
     <g requiredExtensions="http://www.w3.org/1999/xhtml">
       <style>
@@ -52,9 +52,9 @@
         .fg5 { color: #833c9f; } .bg5 { background: #833c9f; }
         .fg6 { color: #0ac1cd; } .bg6 { background: #0ac1cd; }
         .fg7 { color: #e5e5e5; } .bg7,.inv.bg-none { background: #e5e5e5; }
-        .fg8 { color: #666666; } .bg8 { background: #666666; }
+        .fg8 { color: #666; } .bg8 { background: #666; }
         .fg9 { color: #ff00a0; } .bg9 { background: #ff00a0; }
-        .fg10 { color: #ccff00; } .bg10 { background: #ccff00; }
+        .fg10 { color: #cf0; } .bg10 { background: #cf0; }
         .fg11 { color: #ff9f00; } .bg11 { background: #ff9f00; }
         .fg12 { color: #48c6ff; } .bg12 { background: #48c6ff; }
         .fg13 { color: #be67e1; } .bg13 { background: #be67e1; }
@@ -67,19 +67,18 @@
       <circle cx="37" cy="-9" r="7" style="fill: #ffe755;"/>
       <circle cx="57" cy="-9" r="7" style="fill: #cee318;"/>
 
-      <svg x="0" y="10" width="850" height="194.8" viewBox="0 0 850 194.8" overflow="hidden">
-        <foreignObject width="850" height="194.8">
+      <svg x="0" y="10" width="850" height="178" viewBox="0 0 850 178" overflow="hidden">
+        <foreignObject width="850" height="178">
           <div xmlns="http://www.w3.org/1999/xhtml" class="container">
             <div class="input" data-exit-status="0"><pre><span class="prompt">$</span> cargo bench --bench all -- --quiet --breakdown hash_set/collect</pre></div>
             <div class="output"><pre><span class="line">[<span class="bold fg10">√</span>] hash_set<span class="fg6">/collect</span><span class="dimmed"><span> (10ms)</span></span>
-</span><span class="line">├ Instructions           1542645
-</span><span class="line">└ Est. cycles            1864967
+</span><span class="line">├ Instructions           1562312
+</span><span class="line">└ Est. cycles            1894702
 </span><span class="line"><span class="bold">    %   % diff  Instr.diff  Function</span>
-</span><span class="line">88.5%  <span class="dimmed"><span>      -</span></span>  <span class="dimmed"><span>         -</span></span>  hashbrown::map::HashMap&lt;K,V,S,A&gt;::insert
-</span><span class="line">13.0%  <span class="dimmed"><span>      -</span></span>  <span class="dimmed"><span>         -</span></span>  &lt;core::iter::adapters::map::Map&lt;I,F&gt; as core::iter::tra… <span class="fg14">[1]</span>
-</span><span class="line"> 1.1%  <span class="dimmed"><span>      -</span></span>  <span class="dimmed"><span>         -</span></span>  __memset_avx2_unaligned_erms@./string/../sysdeps/x86_64… <span class="fg14">[2]</span>
+</span><span class="line">98.9%        <span class="dimmed"><span>-</span></span>  <span class="dimmed"><span>         -</span></span>  &lt;hashbrown::set::HashSet&lt;u64, core::hash::BuildHasherDe… <span class="fg14">[1]</span>
+</span><span class="line"> 1.1%        <span class="dimmed"><span>-</span></span>  <span class="dimmed"><span>         -</span></span>  __memset_avx2_unaligned_erms@./string/../sysdeps/x86_64… <span class="fg14">[2]</span>
 </span><span class="line"><span class="bold">-----</span>
-</span><span class="line"><span class="fg14"> [1]</span> &lt;core::iter::adapters::map::Map&lt;I,F&gt; as core::iter::traits::iterator::Iterator&gt;::fold
+</span><span class="line"><span class="fg14"> [1]</span> &lt;hashbrown::set::HashSet&lt;u64, core::hash::BuildHasherDefault&lt;std::hash::random::DefaultHasher&gt;&gt; as core::iter::traits::collect::Extend&lt;u64&gt;&gt;::extend::&lt;core::iter::adapters::map::Map&lt;core::ops::range::Range&lt;i32&gt;, yab_e2e_tests::main::{closure#8}::{closure#0}::{closure#0}&gt;&gt;
 </span><span class="line"><span class="fg14"> [2]</span> __memset_avx2_unaligned_erms@./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S</span></pre></div>
           </div>
         </foreignObject>

@@ -1,7 +1,7 @@
 //! Mock cachegrind wrapper.
 //!
-//! To update stats in `all-stats.json`, run `cargo bench --bench all` with the `YAB_BENCHMARKS_JSON` env var set
-//! (e.g., to `stats.json`). The stats will be output to the specified location.
+//! To update stats in `all/*.json`, run `cargo bench --bench all -- --verbose --vs pub:main --save pub:new` and
+//! extract the necessary data from generated `new.json`.
 
 use std::{
     collections::HashMap,
