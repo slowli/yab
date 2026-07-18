@@ -129,7 +129,7 @@
 //! [`criterion`]: https://crates.io/crates/criterion
 
 // Documentation settings.
-#![doc(html_root_url = "https://docs.rs/yab/0.1.0")]
+#![doc(html_root_url = "https://docs.rs/yab/0.2.0")]
 
 pub use std::hint::black_box;
 
