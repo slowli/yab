@@ -2,19 +2,19 @@
   "hash_set/collect": {
     "summary": {
       "instructions": {
-        "total": 1582709,
-        "l1_misses": 17,
-        "l3_misses": 17
+        "total": 1562312,
+        "l1_misses": 13,
+        "l3_misses": 13
       },
       "data_reads": {
-        "total": 120524,
-        "l1_misses": 2695,
+        "total": 100524,
+        "l1_misses": 2768,
         "l3_misses": 3
       },
       "data_writes": {
-        "total": 136492,
-        "l1_misses": 8722,
-        "l3_misses": 2298
+        "total": 116490,
+        "l1_misses": 8723,
+        "l3_misses": 2296
       }
     },
     "breakdown": {
@@ -35,38 +35,21 @@
           "l3_misses": 256
         }
       },
-      "hashbrown::map::HashMap<K,V,S,A>::insert": {
+      "<hashbrown::set::HashSet<u64, core::hash::BuildHasherDefault<std::hash::random::DefaultHasher>> as core::iter::traits::collect::Extend<u64>>::extend::<core::iter::adapters::map::Map<core::ops::range::Range<i32>, yab_e2e_tests::main::{closure#8}::{closure#0}::{closure#0}>>": {
         "instructions": {
-          "total": 1365763,
+          "total": 1545395,
           "l1_misses": 0,
           "l3_misses": 0
         },
         "data_reads": {
-          "total": 110408,
-          "l1_misses": 2669,
+          "total": 100424,
+          "l1_misses": 2744,
           "l3_misses": 0
         },
         "data_writes": {
-          "total": 70000,
-          "l1_misses": 8456,
-          "l3_misses": 2041
-        }
-      },
-      "<core::iter::adapters::map::Map<I,F> as core::iter::traits::iterator::Iterator>::fold": {
-        "instructions": {
-          "total": 200026,
-          "l1_misses": 0,
-          "l3_misses": 0
-        },
-        "data_reads": {
-          "total": 10014,
-          "l1_misses": 1,
-          "l3_misses": 0
-        },
-        "data_writes": {
-          "total": 50008,
-          "l1_misses": 0,
-          "l3_misses": 0
+          "total": 100009,
+          "l1_misses": 8457,
+          "l3_misses": 2039
         }
       }
     }
