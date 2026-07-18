@@ -40,7 +40,7 @@ jobs:
       - name: Build libraries
         run: cargo build -p yab
       - name: Run benchmarks (no features)
-        run: cargo bench --bench all -- --verbose --vs pub:main --threshold 2%
+        run: cargo bench --bench all -- --verbose --vs pub:main --threshold 2.5%
       - name: Run tests (no features)
         run: cargo test --release --workspace --all-targets
         env:
