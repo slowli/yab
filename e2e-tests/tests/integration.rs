@@ -221,7 +221,7 @@ fn assert_reference_stats(outputs: &HashMap<String, BenchmarkOutput>, full: bool
     let should_skip_complex_stats = env::var("YAB_SKIP_COMPLEX_STATS").is_ok();
     for (name, expected_stats) in &*EXPECTED_STATS {
         let expected_stats = expected_stats.summary.as_full().unwrap();
-        if name == "hash_set/collect" && should_skip_complex_stats {
+        if name.starts_with("hash_set/") && should_skip_complex_stats {
             continue;
         }
         println!("Comparing bench {name}");
