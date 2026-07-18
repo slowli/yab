@@ -94,7 +94,7 @@ fn transform_output<'s>(output_lines: impl Iterator<Item = StyledStr<'s>>) -> St
     buffer.build()
 }
 
-fn test_config(sequential: bool) -> (TestConfig<StdShell>, TestLock) {
+fn test_config(sequential: bool) -> (TestConfig<ShellOptions<StdShell>>, TestLock) {
     let lock = TestLock::new();
     let target_path = lock.dir.path().join("target");
 

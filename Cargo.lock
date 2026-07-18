@@ -445,9 +445,9 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "handlebars"
-version = "6.4.0"
+version = "6.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b3f9296c208515b87bd915a2f5d1163d4b3f863ba83337d7713cf478055948e"
+checksum = "4633d16a2350341713c379d6d06a4b9e1845329386026a49ce4fd09c2f3b16f6"
 dependencies = [
  "derive_builder",
  "log",
@@ -848,9 +848,9 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.39.2"
+version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "958f21e8e7ceb5a1aa7fa87fab28e7c75976e0bfe7e23ff069e0a260f894067d"
+checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
 dependencies = [
  "memchr",
 ]
@@ -977,6 +977,7 @@ version = "1.0.149"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83fc039473c5595ace860d8c4fafa220ff474b3fc6bfdb4293327f1a37e94d86"
 dependencies = [
+ "indexmap",
  "itoa",
  "memchr",
  "serde",
@@ -1030,8 +1031,9 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "styled-str"
-version = "0.5.0-beta.1"
-source = "git+https://github.com/slowli/term-transcript?rev=06172afe8197f4d2945c51edd41df4af83f82d70#06172afe8197f4d2945c51edd41df4af83f82d70"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50b6db2c26caf6101115371860bb8f25736b6f852d84fe69e85c8e0e957a5446"
 dependencies = [
  "anstyle",
  "compile-fmt",
@@ -1076,8 +1078,9 @@ dependencies = [
 
 [[package]]
 name = "term-transcript"
-version = "0.5.0-beta.1"
-source = "git+https://github.com/slowli/term-transcript?rev=06172afe8197f4d2945c51edd41df4af83f82d70#06172afe8197f4d2945c51edd41df4af83f82d70"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8974c1086008987e1fd23c9810aa13e1f43dfde86ad3c4d55ae82a4231eb5cd1"
 dependencies = [
  "anstream",
  "anstyle",
