@@ -23,7 +23,9 @@ multiple-versions = "deny"
 wildcards = "deny"
 allow-wildcard-paths = true
 skip-tree = [
-  { name = "windows-sys", version = "^0.60" },
+  { name = "syn", version = "^2" },
+  # Requested by `crabgrind` via `bindgen`; `crabgrind` also requests v2 via `cc`
+  { name = "shlex", version = "^1" },
 ]
 
 [sources]
@@ -31,4 +33,4 @@ unknown-registry = "deny"
 unknown-git = "deny"
 
 [sources.allow-org]
-github = ["slowli"]
+github = []
